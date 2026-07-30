@@ -4,54 +4,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, confusion_matrix, roc_auc_score
+from .pipeline import preprocess_data
 
-def preprocess_data(df):
-    """Common preprocessing logic for the dataset."""
-    # Create copy to avoid SettingWithCopyWarning
-    df = df.copy()
-    
-    # 1. Target variable
-    if 'price' in df.columns:
-        df['price'] = pd.to_numeric(df['price'], errors='coerce')
-        df = df.dropna(subset=['price'])
-        median_price = df['price'].median()
-        df['is_high_price'] = (df['price'] > median_price).astype(int)
-    
-    # 2. Amenities count
-    def count_amenities(x):
-        if pd.isna(x) or str(x).strip().lower() == 'none':
-            return 0
-        return len(str(x).split(','))
-    
-    if 'amenities' in df.columns:
-        df['amenities_count'] = df['amenities'].apply(count_amenities)
-    else:
-        df['amenities_count'] = 0
-        
-    # 3. Pets allowed (binary)
-    def has_pets(x):
-        if pd.isna(x) or str(x).strip().lower() == 'none':
-            return 0
-        return 1
-        
-    if 'pets_allowed' in df.columns:
-        df['pets_allowed_bin'] = df['pets_allowed'].apply(has_pets)
-    else:
-        df['pets_allowed_bin'] = 0
-
-    # 4. Bedrooms and Bathrooms
-    for col in ['bedrooms', 'bathrooms']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
-    # 5. State one-hot encoding
-    if 'state' in df.columns:
-        state_dummies = pd.get_dummies(df['state'], prefix='state')
-        df = pd.concat([df, state_dummies], axis=1)
-        
-    return df
-
-def train_model(df):
+def train_model(df, threshold=0.5):
     # Preprocess
     df_processed = preprocess_data(df)
     
@@ -69,7 +24,7 @@ def train_model(df):
     # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    # Scale numeric features (we can scale all features or just numeric. Let's scale all for consistency)
+    # Scale numeric features
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -88,8 +43,8 @@ def train_model(df):
     optimal_idx = np.argmax(j_scores)
     optimal_threshold = thresholds[optimal_idx]
     
-    # Predictions using default 0.5 threshold for standard metrics as requested (or we could use optimal, let's provide metrics at 0.5)
-    y_pred = (y_pred_proba >= 0.5).astype(int)
+    # Predictions using user-selected threshold for standard metrics
+    y_pred = (y_pred_proba >= threshold).astype(int)
     
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, zero_division=0)
@@ -98,7 +53,7 @@ def train_model(df):
     cm = confusion_matrix(y_test, y_pred)
     roc_auc = roc_auc_score(y_test, y_pred_proba)
     
-    return model, scaler, feature_cols, accuracy, precision, recall, f1, roc_auc, optimal_threshold, cm
+    return model, scaler, feature_cols, accuracy, precision, recall, f1, roc_auc, optimal_threshold, cm, fpr, tpr
 
 def predict_property(model, scaler, feature_names, input_data):
     """

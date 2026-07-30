@@ -4,48 +4,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, confusion_matrix, roc_auc_score
+from .pipeline import preprocess_data
 
-def preprocess_data(df):
-    """Common preprocessing logic for the dataset."""
-    df = df.copy()
-    
-    if 'price' in df.columns:
-        df['price'] = pd.to_numeric(df['price'], errors='coerce')
-        df = df.dropna(subset=['price'])
-        median_price = df['price'].median()
-        df['is_high_price'] = (df['price'] > median_price).astype(int)
-    
-    def count_amenities(x):
-        if pd.isna(x) or str(x).strip().lower() == 'none':
-            return 0
-        return len(str(x).split(','))
-    
-    if 'amenities' in df.columns:
-        df['amenities_count'] = df['amenities'].apply(count_amenities)
-    else:
-        df['amenities_count'] = 0
-        
-    def has_pets(x):
-        if pd.isna(x) or str(x).strip().lower() == 'none':
-            return 0
-        return 1
-        
-    if 'pets_allowed' in df.columns:
-        df['pets_allowed_bin'] = df['pets_allowed'].apply(has_pets)
-    else:
-        df['pets_allowed_bin'] = 0
-
-    for col in ['bedrooms', 'bathrooms']:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
-    if 'state' in df.columns:
-        state_dummies = pd.get_dummies(df['state'], prefix='state')
-        df = pd.concat([df, state_dummies], axis=1)
-        
-    return df
-
-def train_model(df):
+def train_model(df, max_depth=10, threshold=0.5):
     df_processed = preprocess_data(df)
     
     feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count']
@@ -63,7 +24,7 @@ def train_model(df):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = DecisionTreeClassifier(random_state=42, max_depth=10) # max_depth added to prevent overfitting
+    model = DecisionTreeClassifier(random_state=42, max_depth=max_depth)
     model.fit(X_train_scaled, y_train)
     
     y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
@@ -73,7 +34,7 @@ def train_model(df):
     optimal_idx = np.argmax(j_scores)
     optimal_threshold = thresholds[optimal_idx]
     
-    y_pred = (y_pred_proba >= 0.5).astype(int)
+    y_pred = (y_pred_proba >= threshold).astype(int)
     
     accuracy = accuracy_score(y_test, y_pred)
     precision = precision_score(y_test, y_pred, zero_division=0)
@@ -82,7 +43,7 @@ def train_model(df):
     cm = confusion_matrix(y_test, y_pred)
     roc_auc = roc_auc_score(y_test, y_pred_proba)
     
-    return model, scaler, feature_cols, accuracy, precision, recall, f1, roc_auc, optimal_threshold, cm
+    return model, scaler, feature_cols, accuracy, precision, recall, f1, roc_auc, optimal_threshold, cm, fpr, tpr
 
 def predict_property(model, scaler, feature_names, input_data):
     df_in = pd.DataFrame([input_data])

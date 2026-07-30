@@ -29,35 +29,39 @@ def load_data():
         return pd.DataFrame()
 
 @st.cache_resource
-def get_trained_models(df):
+def get_trained_models(df, knn_k, dt_depth, rf_estimators, rf_depth, threshold):
     results = {}
     
     # Train Logistic Regression
-    lr_model, lr_scaler, lr_features, lr_acc, lr_prec, lr_rec, lr_f1, lr_roc, lr_thresh, lr_cm = train_lr(df)
+    lr_model, lr_scaler, lr_features, lr_acc, lr_prec, lr_rec, lr_f1, lr_roc, lr_thresh, lr_cm, lr_fpr, lr_tpr = train_lr(df, threshold=threshold)
     results['Logistic Regression'] = {
         'model': lr_model, 'scaler': lr_scaler, 'features': lr_features, 'predict_fn': predict_lr,
-        'metrics': {'Accuracy': lr_acc, 'Precision': lr_prec, 'Recall': lr_rec, 'F1-Score': lr_f1, 'ROC-AUC': lr_roc, 'Threshold': lr_thresh}
+        'metrics': {'Accuracy': lr_acc, 'Precision': lr_prec, 'Recall': lr_rec, 'F1-Score': lr_f1, 'ROC-AUC': lr_roc, 'Threshold': lr_thresh},
+        'cm': lr_cm, 'fpr': lr_fpr, 'tpr': lr_tpr
     }
     
     # Train KNN
-    knn_model, knn_scaler, knn_features, knn_acc, knn_prec, knn_rec, knn_f1, knn_roc, knn_thresh, knn_cm = train_knn(df)
+    knn_model, knn_scaler, knn_features, knn_acc, knn_prec, knn_rec, knn_f1, knn_roc, knn_thresh, knn_cm, knn_fpr, knn_tpr = train_knn(df, n_neighbors=knn_k, threshold=threshold)
     results['KNN'] = {
         'model': knn_model, 'scaler': knn_scaler, 'features': knn_features, 'predict_fn': predict_knn,
-        'metrics': {'Accuracy': knn_acc, 'Precision': knn_prec, 'Recall': knn_rec, 'F1-Score': knn_f1, 'ROC-AUC': knn_roc, 'Threshold': knn_thresh}
+        'metrics': {'Accuracy': knn_acc, 'Precision': knn_prec, 'Recall': knn_rec, 'F1-Score': knn_f1, 'ROC-AUC': knn_roc, 'Threshold': knn_thresh},
+        'cm': knn_cm, 'fpr': knn_fpr, 'tpr': knn_tpr
     }
     
     # Train Decision Tree
-    dt_model, dt_scaler, dt_features, dt_acc, dt_prec, dt_rec, dt_f1, dt_roc, dt_thresh, dt_cm = train_dt(df)
+    dt_model, dt_scaler, dt_features, dt_acc, dt_prec, dt_rec, dt_f1, dt_roc, dt_thresh, dt_cm, dt_fpr, dt_tpr = train_dt(df, max_depth=dt_depth, threshold=threshold)
     results['Decision Tree'] = {
         'model': dt_model, 'scaler': dt_scaler, 'features': dt_features, 'predict_fn': predict_dt,
-        'metrics': {'Accuracy': dt_acc, 'Precision': dt_prec, 'Recall': dt_rec, 'F1-Score': dt_f1, 'ROC-AUC': dt_roc, 'Threshold': dt_thresh}
+        'metrics': {'Accuracy': dt_acc, 'Precision': dt_prec, 'Recall': dt_rec, 'F1-Score': dt_f1, 'ROC-AUC': dt_roc, 'Threshold': dt_thresh},
+        'cm': dt_cm, 'fpr': dt_fpr, 'tpr': dt_tpr
     }
     
     # Train Random Forest
-    rf_model, rf_scaler, rf_features, rf_acc, rf_prec, rf_rec, rf_f1, rf_roc, rf_thresh, rf_cm = train_rf(df)
+    rf_model, rf_scaler, rf_features, rf_acc, rf_prec, rf_rec, rf_f1, rf_roc, rf_thresh, rf_cm, rf_fpr, rf_tpr = train_rf(df, n_estimators=rf_estimators, max_depth=rf_depth, threshold=threshold)
     results['Random Forest'] = {
         'model': rf_model, 'scaler': rf_scaler, 'features': rf_features, 'predict_fn': predict_rf,
-        'metrics': {'Accuracy': rf_acc, 'Precision': rf_prec, 'Recall': rf_rec, 'F1-Score': rf_f1, 'ROC-AUC': rf_roc, 'Threshold': rf_thresh}
+        'metrics': {'Accuracy': rf_acc, 'Precision': rf_prec, 'Recall': rf_rec, 'F1-Score': rf_f1, 'ROC-AUC': rf_roc, 'Threshold': rf_thresh},
+        'cm': rf_cm, 'fpr': rf_fpr, 'tpr': rf_tpr
     }
     
     return results
@@ -87,10 +91,17 @@ df_explore['pets_allowed_bin'] = df_explore['pets_allowed'].apply(lambda x: 0 if
 for col in ['bedrooms', 'bathrooms']:
     df_explore[col] = pd.to_numeric(df_explore[col], errors='coerce').fillna(0)
 
-with st.spinner("Training models... This may take a moment on first run."):
-    models_dict = get_trained_models(df_raw)
-
 # --- Sidebar ---
+st.sidebar.header("⚙️ Model Hyperparameters")
+st.sidebar.markdown("Tune models dynamically.")
+knn_k = st.sidebar.slider("KNN: n_neighbors", min_value=1, max_value=25, value=5, step=1)
+dt_depth = st.sidebar.slider("Decision Tree: max_depth", min_value=2, max_value=20, value=10, step=1)
+rf_estimators = st.sidebar.slider("Random Forest: n_estimators", min_value=10, max_value=200, value=100, step=10)
+rf_depth = st.sidebar.slider("Random Forest: max_depth", min_value=2, max_value=20, value=10, step=1)
+threshold = st.sidebar.slider("Probability Threshold", min_value=0.10, max_value=0.90, value=0.50, step=0.01)
+
+st.sidebar.divider()
+
 st.sidebar.header("🎯 Single Property Inputs")
 st.sidebar.markdown("Enter details to predict rent risk.")
 
@@ -111,8 +122,6 @@ price_min, price_max = st.sidebar.slider("Price Range", float(df_explore['price'
 filter_beds = st.sidebar.slider("Minimum Bedrooms", 0, 10, 0)
 
 if st.sidebar.button("Reset Filters"):
-    # This will trigger a rerun and reset widget states naturally if we used session state, 
-    # but for simplicity we just instruct the user it reruns
     st.rerun()
 
 # Apply Filters
@@ -122,6 +131,8 @@ if filter_state != "All":
 df_filtered = df_filtered[(df_filtered['price'] >= price_min) & (df_filtered['price'] <= price_max)]
 df_filtered = df_filtered[df_filtered['bedrooms'] >= filter_beds]
 
+with st.spinner("Training models... This may take a moment."):
+    models_dict = get_trained_models(df_raw, knn_k, dt_depth, rf_estimators, rf_depth, threshold)
 
 # --- Generate Predictions for Single Property ---
 input_data = {
@@ -134,15 +145,18 @@ input_data = {
 
 predictions = []
 for name, m_info in models_dict.items():
-    pred, prob_pct, conf_pct = m_info['predict_fn'](m_info['model'], m_info['scaler'], m_info['features'], input_data)
-    thresh = m_info['metrics']['Threshold']
-    # Adjust recommendation based on default 0.5 baseline vs optimal
-    rec = "High Risk" if prob_pct >= 50 else "Low Risk"
+    _, prob_pct, conf_pct = m_info['predict_fn'](m_info['model'], m_info['scaler'], m_info['features'], input_data)
+    opt_thresh = m_info['metrics']['Threshold']
+    
+    # Adjust prediction and recommendation based on user-selected threshold
+    pred_val = 1 if (prob_pct / 100.0) >= threshold else 0
+    rec = "High Risk" if (prob_pct / 100.0) >= threshold else "Low Risk"
+    
     predictions.append({
         'Model Name': name,
-        'Prediction': pred,
+        'Prediction': pred_val,
         'High Price Probability %': round(prob_pct, 2),
-        'Optimal Threshold': round(thresh, 4),
+        'Optimal Threshold': round(opt_thresh, 4),
         'Confidence %': round(conf_pct, 2),
         'Recommendation': rec
     })
@@ -170,7 +184,7 @@ with tab1:
                     {'range': [0, 30], 'color': "lightgreen"},
                     {'range': [30, 70], 'color': "gold"},
                     {'range': [70, 100], 'color': "tomato"}],
-                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 50}
+                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': threshold * 100}
             }
         ))
         fig_gauge.update_layout(height=350)
@@ -183,6 +197,8 @@ with tab1:
             color='Model Name', text='High Price Probability %',
             title="Model Consensus: Probability of High Price"
         )
+        # Add a horizontal line for the user threshold
+        fig_bar.add_hline(y=threshold * 100, line_dash="dash", line_color="red", annotation_text=f"Threshold: {threshold:.2f}")
         fig_bar.update_traces(texttemplate='%{text}%', textposition='outside')
         fig_bar.update_layout(height=350, yaxis_range=[0, 110])
         st.plotly_chart(fig_bar, use_container_width=True)
@@ -195,9 +211,6 @@ with tab1:
         categories = ['Bedrooms', 'Bathrooms', 'Price ($)', 'Amenities Count']
         fig_radar = go.Figure()
         
-        # We need to scale values for a radar chart to make sense visually if they are on vastly different scales.
-        # But we can just use multiple axes or just plot raw with log if needed.
-        # Simplest is to normalize against market average (Market Avg = 1.0)
         market_vals = [1.0, 1.0, 1.0, 1.0]
         prop_vals = [
             input_beds / (avg_market['bedrooms'] or 1),
@@ -219,8 +232,8 @@ with tab1:
         st.subheader("Detailed Model Predictions")
         st.dataframe(df_preds[['Model Name', 'Prediction', 'High Price Probability %', 'Optimal Threshold', 'Confidence %']], use_container_width=True)
         
-        st.subheader("Model Decision Baseline Table")
-        st.dataframe(df_preds[['Model Name', 'Optimal Threshold', 'Recommendation']].assign(**{'Default Baseline': 0.5}), use_container_width=True)
+        st.subheader(f"Model Decision Baseline Table (Threshold = {threshold:.2f})")
+        st.dataframe(df_preds[['Model Name', 'Optimal Threshold', 'Recommendation']].assign(**{'User Threshold': threshold}), use_container_width=True)
 
 with tab2:
     st.header("Data Exploration & Understanding")
@@ -282,7 +295,7 @@ with tab3:
         })
     df_metrics = pd.DataFrame(metrics_data)
     
-    st.subheader("Model Scorecard Table (Threshold = 0.5)")
+    st.subheader(f"Model Scorecard Table (Threshold = {threshold:.2f})")
     st.dataframe(df_metrics, use_container_width=True)
     
     # 2. Performance Comparison Chart
@@ -292,3 +305,52 @@ with tab3:
     fig_comp = px.bar(df_melted, x='Metric', y='Score', color='Model', barmode='group', title="Metric Comparison across Models")
     fig_comp.update_layout(yaxis_range=[0, 1.1])
     st.plotly_chart(fig_comp, use_container_width=True)
+
+    c_left, c_right = st.columns(2)
+    
+    with c_left:
+        # 3. Confusion Matrix Heatmap
+        st.subheader("Confusion Matrix Heatmap")
+        selected_model = st.selectbox("Select Model for Confusion Matrix", list(models_dict.keys()))
+        cm = models_dict[selected_model]['cm']
+        
+        # Ensure cm is correct orientation (True Label on Y, Predicted on X)
+        fig_cm = px.imshow(
+            cm, 
+            text_auto=True, 
+            color_continuous_scale="Blues", 
+            labels=dict(x="Predicted Label", y="True Label", color="Count"),
+            x=['Budget', 'Premium'], 
+            y=['Budget', 'Premium'], 
+            title=f"Confusion Matrix: {selected_model}"
+        )
+        st.plotly_chart(fig_cm, use_container_width=True)
+
+    with c_right:
+        # 4. Feature Importance
+        st.subheader("Feature Importance")
+        fi_model_name = st.selectbox("Select Model for Feature Importance", ["Decision Tree", "Random Forest"])
+        if fi_model_name in models_dict:
+            model_obj = models_dict[fi_model_name]['model']
+            if hasattr(model_obj, 'feature_importances_'):
+                importances = model_obj.feature_importances_
+                features = models_dict[fi_model_name]['features']
+                df_fi = pd.DataFrame({'Feature': features, 'Importance': importances}).sort_values(by='Importance', ascending=True)
+                
+                # Keep top 15 features to avoid clutter
+                df_fi = df_fi.tail(15)
+                
+                fig_fi = px.bar(df_fi, x='Importance', y='Feature', orientation='h', title=f"Top Features: {fi_model_name}")
+                st.plotly_chart(fig_fi, use_container_width=True)
+            else:
+                st.warning("Selected model does not support feature importance calculation.")
+                
+    # 5. ROC Curve for all models
+    st.subheader("ROC Curves Comparison")
+    fig_roc = go.Figure()
+    for name, m_info in models_dict.items():
+        fig_roc.add_trace(go.Scatter(x=m_info['fpr'], y=m_info['tpr'], mode='lines', name=f"{name} (AUC={m_info['metrics']['ROC-AUC']:.2f})"))
+    fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', line=dict(dash='dash', color='gray'), name='Random Guess (AUC=0.50)'))
+    fig_roc.update_layout(title="ROC Curve for All Models", xaxis_title="False Positive Rate", yaxis_title="True Positive Rate", hovermode="x unified")
+    st.plotly_chart(fig_roc, use_container_width=True)
+
