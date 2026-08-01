@@ -91,6 +91,10 @@ df_explore['pets_allowed_bin'] = df_explore['pets_allowed'].apply(lambda x: 0 if
 for col in ['bedrooms', 'bathrooms']:
     df_explore[col] = pd.to_numeric(df_explore[col], errors='coerce').fillna(0)
 
+if 'square_feet' in df_explore.columns:
+    df_explore['square_feet'] = pd.to_numeric(df_explore['square_feet'], errors='coerce')
+    df_explore['square_feet'] = df_explore['square_feet'].fillna(df_explore['square_feet'].median())
+
 # --- Sidebar ---
 st.sidebar.header("⚙️ Model Hyperparameters")
 st.sidebar.markdown("Tune models dynamically.")
@@ -110,6 +114,7 @@ input_state = st.sidebar.selectbox("State", input_state_options)
 input_price = st.sidebar.number_input("Monthly Rent Price ($)", min_value=100, max_value=100000, value=2500, step=100)
 input_beds = st.sidebar.number_input("Bedrooms", min_value=0, max_value=10, value=2, step=1)
 input_baths = st.sidebar.number_input("Bathrooms", min_value=0.0, max_value=10.0, value=1.0, step=0.5)
+input_sqft = st.sidebar.number_input("Square Feet", min_value=100, max_value=10000, value=1000, step=100)
 input_pets = st.sidebar.checkbox("Pets Allowed", value=True)
 amenity_options = ["Gym", "Pool", "Parking", "Washer/Dryer", "AC", "Balcony"]
 input_amenities = st.sidebar.multiselect("Amenities", amenity_options, default=["Parking", "AC"])
@@ -140,6 +145,7 @@ input_data = {
     'bathrooms': input_baths,
     'pets_allowed_bin': 1 if input_pets else 0,
     'amenities_count': len(input_amenities),
+    'square_feet': input_sqft,
     'state': input_state
 }
 
@@ -206,17 +212,18 @@ with tab1:
     col3, col4 = st.columns([1, 1])
     with col3:
         # 3. Property Feature Profile vs Average Market Profile (Radar Chart)
-        avg_market = df_explore[['bedrooms', 'bathrooms', 'price', 'amenities_count']].mean()
+        avg_market = df_explore[['bedrooms', 'bathrooms', 'price', 'amenities_count', 'square_feet']].mean()
         
-        categories = ['Bedrooms', 'Bathrooms', 'Price ($)', 'Amenities Count']
+        categories = ['Bedrooms', 'Bathrooms', 'Price ($)', 'Amenities Count', 'Square Feet']
         fig_radar = go.Figure()
         
-        market_vals = [1.0, 1.0, 1.0, 1.0]
+        market_vals = [1.0, 1.0, 1.0, 1.0, 1.0]
         prop_vals = [
             input_beds / (avg_market['bedrooms'] or 1),
             input_baths / (avg_market['bathrooms'] or 1),
             input_price / (avg_market['price'] or 1),
-            len(input_amenities) / (avg_market['amenities_count'] or 1)
+            len(input_amenities) / (avg_market['amenities_count'] or 1),
+            input_sqft / (avg_market['square_feet'] or 1)
         ]
         
         fig_radar.add_trace(go.Scatterpolar(r=market_vals, theta=categories, fill='toself', name='Market Average'))
@@ -243,7 +250,7 @@ with tab2:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Apartments (Filtered)", len(df_filtered))
     c2.metric("Total Columns", len(df_raw.columns))
-    c3.metric("Available Features Used", 5) # beds, baths, pets, amenities, state
+    c3.metric("Available Features Used", 6) # beds, baths, pets, amenities, state, square_feet
     c4.metric("Median Price (Overall)", f"${median_price:,.2f}")
     
     st.divider()
@@ -263,9 +270,29 @@ with tab2:
         fig_pets = px.bar(pets_dist, x='Pets Allowed', y='Count', color='price_category', barmode='group', title="Pets Allowed vs Price Category")
         st.plotly_chart(fig_pets, use_container_width=True)
         
-    # 3. Feature Correlation Matrix
+    col_e3, col_e4 = st.columns(2)
+    with col_e3:
+        # Chart 7: Scatter Plot (Square Feet vs Monthly Price colored by Rent Category)
+        if 'square_feet' in df_filtered.columns:
+            fig_scatter = px.scatter(df_filtered, x='square_feet', y='price', color='price_category', opacity=0.6,
+                                     title="Square Feet vs Monthly Price",
+                                     labels={'square_feet': 'Square Feet', 'price': 'Monthly Price ($)'})
+            st.plotly_chart(fig_scatter, use_container_width=True)
+            
+    with col_e4:
+        # Chart 8: Box Plot / Violin Plot (Price distribution across top States)
+        top_states = df_filtered['state'].value_counts().nlargest(10).index
+        df_top_states = df_filtered[df_filtered['state'].isin(top_states)]
+        fig_box = px.box(df_top_states, x='state', y='price', color='state',
+                         title="Price Distribution across Top 10 States",
+                         labels={'state': 'State', 'price': 'Monthly Price ($)'})
+        st.plotly_chart(fig_box, use_container_width=True)
+        
+    # Chart 6: Feature Correlation Matrix
     st.subheader("Feature Correlation Matrix")
-    corr_cols = ['price', 'bedrooms', 'bathrooms', 'amenities_count', 'pets_allowed_bin', 'is_high_price']
+    corr_cols = ['price', 'bedrooms', 'bathrooms', 'amenities_count', 'pets_allowed_bin', 'square_feet', 'is_high_price']
+    # Filter only columns that exist
+    corr_cols = [c for c in corr_cols if c in df_filtered.columns]
     corr_matrix = df_filtered[corr_cols].corr()
     
     fig_corr = px.imshow(

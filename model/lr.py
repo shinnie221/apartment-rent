@@ -11,7 +11,7 @@ def train_model(df, threshold=0.5):
     df_processed = preprocess_data(df)
     
     # Define features
-    feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count']
+    feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']
     state_cols = [col for col in df_processed.columns if col.startswith('state_')]
     feature_cols.extend(state_cols)
     
@@ -71,6 +71,7 @@ def predict_property(model, scaler, feature_names, input_data):
     if 'bathrooms' in df_in.columns: X_in['bathrooms'] = df_in['bathrooms'].values[0]
     if 'pets_allowed_bin' in df_in.columns: X_in['pets_allowed_bin'] = df_in['pets_allowed_bin'].values[0]
     if 'amenities_count' in df_in.columns: X_in['amenities_count'] = df_in['amenities_count'].values[0]
+    if 'square_feet' in df_in.columns: X_in['square_feet'] = df_in['square_feet'].values[0]
     
     # Set state
     if 'state' in df_in.columns:

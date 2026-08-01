@@ -34,6 +34,13 @@ def preprocess_data(df):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
+    if 'square_feet' in df.columns:
+        df['square_feet'] = pd.to_numeric(df['square_feet'], errors='coerce')
+        median_sqft = df['square_feet'].median()
+        df['square_feet'] = df['square_feet'].fillna(median_sqft)
+    else:
+        df['square_feet'] = 0
+            
     if 'state' in df.columns:
         state_dummies = pd.get_dummies(df['state'], prefix='state')
         df = pd.concat([df, state_dummies], axis=1)
