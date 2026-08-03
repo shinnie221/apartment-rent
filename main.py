@@ -175,72 +175,66 @@ tab1, tab2, tab3 = st.tabs(["📊 Property Price / Rent Risk", "📈 Data Explor
 
 with tab1:
     st.header("Property Rent Risk Consensus")
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        # 1. High Rent Risk Gauge
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = avg_prob,
-            title = {'text': "Average High Rent Risk (%)"},
-            gauge = {
-                'axis': {'range': [0, 100]},
-                'bar': {'color': "darkblue"},
-                'steps': [
-                    {'range': [0, 30], 'color': "lightgreen"},
-                    {'range': [30, 70], 'color': "gold"},
-                    {'range': [70, 100], 'color': "tomato"}],
-                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': threshold * 100}
-            }
-        ))
-        fig_gauge.update_layout(height=350)
-        st.plotly_chart(fig_gauge, use_container_width=True)
-        
-    with col2:
-        # 2. Model Consensus Chart
-        fig_bar = px.bar(
-            df_preds, x='Model Name', y='High Price Probability %', 
-            color='Model Name', text='High Price Probability %',
-            title="Model Consensus: Probability of High Price"
-        )
-        # Add a horizontal line for the user threshold
-        fig_bar.add_hline(y=threshold * 100, line_dash="dash", line_color="red", annotation_text=f"Threshold: {threshold:.2f}")
-        fig_bar.update_traces(texttemplate='%{text}%', textposition='outside')
-        fig_bar.update_layout(height=350, yaxis_range=[0, 110])
-        st.plotly_chart(fig_bar, use_container_width=True)
 
-    col3, col4 = st.columns([1, 1])
-    with col3:
-        # 3. Property Feature Profile vs Average Market Profile (Radar Chart)
-        avg_market = df_explore[['bedrooms', 'bathrooms', 'price', 'amenities_count', 'square_feet']].mean()
-        
-        categories = ['Bedrooms', 'Bathrooms', 'Price ($)', 'Amenities Count', 'Square Feet']
-        fig_radar = go.Figure()
-        
-        market_vals = [1.0, 1.0, 1.0, 1.0, 1.0]
-        prop_vals = [
-            input_beds / (avg_market['bedrooms'] or 1),
-            input_baths / (avg_market['bathrooms'] or 1),
-            input_price / (avg_market['price'] or 1),
-            len(input_amenities) / (avg_market['amenities_count'] or 1),
-            input_sqft / (avg_market['square_feet'] or 1)
-        ]
-        
-        fig_radar.add_trace(go.Scatterpolar(r=market_vals, theta=categories, fill='toself', name='Market Average'))
-        fig_radar.add_trace(go.Scatterpolar(r=prop_vals, theta=categories, fill='toself', name='Selected Property'))
-        fig_radar.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[0, max(prop_vals + [1.5])])),
-            showlegend=True,
-            title="Property vs Market Average (Normalized)"
-        )
-        st.plotly_chart(fig_radar, use_container_width=True)
-        
-    with col4:
-        st.subheader("Detailed Model Predictions")
-        st.dataframe(df_preds[['Model Name', 'Prediction', 'High Price Probability %', 'Optimal Threshold', 'Confidence %']], use_container_width=True)
-        
-        st.subheader(f"Model Decision Baseline Table (Threshold = {threshold:.2f})")
-        st.dataframe(df_preds[['Model Name', 'Optimal Threshold', 'Recommendation']].assign(**{'User Threshold': threshold}), use_container_width=True)
+    # 1. High Rent Risk Gauge
+    fig_gauge = go.Figure(go.Indicator(
+        mode = "gauge+number",
+        value = avg_prob,
+        title = {'text': "Average High Rent Risk (%)"},
+        gauge = {
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "darkblue"},
+            'steps': [
+                {'range': [0, 30], 'color': "lightgreen"},
+                {'range': [30, 70], 'color': "gold"},
+                {'range': [70, 100], 'color': "tomato"}],
+            'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': threshold * 100}
+        }
+    ))
+    fig_gauge.update_layout(height=350)
+    st.plotly_chart(fig_gauge, use_container_width=True)
+
+    # 2. Model Consensus Chart
+    fig_bar = px.bar(
+        df_preds, x='Model Name', y='High Price Probability %', 
+        color='Model Name', text='High Price Probability %',
+        title="Model Consensus: Probability of High Price"
+    )
+    # Add a horizontal line for the user threshold
+    fig_bar.add_hline(y=threshold * 100, line_dash="dash", line_color="red", annotation_text=f"Threshold: {threshold:.2f}")
+    fig_bar.update_traces(texttemplate='%{text}%', textposition='outside')
+    fig_bar.update_layout(height=350, yaxis_range=[0, 110])
+    st.plotly_chart(fig_bar, use_container_width=True)
+
+    # 3. Property Feature Profile vs Average Market Profile (Radar Chart)
+    avg_market = df_explore[['bedrooms', 'bathrooms', 'price', 'amenities_count', 'square_feet']].mean()
+    
+    categories = ['Bedrooms', 'Bathrooms', 'Price ($)', 'Amenities Count', 'Square Feet']
+    fig_radar = go.Figure()
+    
+    market_vals = [1.0, 1.0, 1.0, 1.0, 1.0]
+    prop_vals = [
+        input_beds / (avg_market['bedrooms'] or 1),
+        input_baths / (avg_market['bathrooms'] or 1),
+        input_price / (avg_market['price'] or 1),
+        len(input_amenities) / (avg_market['amenities_count'] or 1),
+        input_sqft / (avg_market['square_feet'] or 1)
+    ]
+    
+    fig_radar.add_trace(go.Scatterpolar(r=market_vals, theta=categories, fill='toself', name='Market Average'))
+    fig_radar.add_trace(go.Scatterpolar(r=prop_vals, theta=categories, fill='toself', name='Selected Property'))
+    fig_radar.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, max(prop_vals + [1.5])])),
+        showlegend=True,
+        title="Property vs Market Average (Normalized)"
+    )
+    st.plotly_chart(fig_radar, use_container_width=True)
+
+    st.subheader("Detailed Model Predictions")
+    st.dataframe(df_preds[['Model Name', 'Prediction', 'High Price Probability %', 'Optimal Threshold', 'Confidence %']], use_container_width=True)
+    
+    st.subheader(f"Model Decision Baseline Table (Threshold = {threshold:.2f})")
+    st.dataframe(df_preds[['Model Name', 'Optimal Threshold', 'Recommendation']].assign(**{'User Threshold': threshold}), use_container_width=True)
 
 with tab2:
     st.header("Data Exploration & Understanding")
