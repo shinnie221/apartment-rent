@@ -6,7 +6,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, confusion_matrix, roc_auc_score
 from .pipeline import preprocess_data
 
-def train_model(df, threshold=0.5):
+def train_model(df, C=1.0, threshold=0.5):
     # Preprocess
     df_processed = preprocess_data(df)
     
@@ -30,7 +30,7 @@ def train_model(df, threshold=0.5):
     X_test_scaled = scaler.transform(X_test)
     
     # Train model
-    model = LogisticRegression(random_state=42, max_iter=1000)
+    model = LogisticRegression(C=C, random_state=42, max_iter=1000)
     model.fit(X_train_scaled, y_train)
     
     # Predict on test

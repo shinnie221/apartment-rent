@@ -29,11 +29,11 @@ def load_data():
         return pd.DataFrame()
 
 @st.cache_resource
-def get_trained_models(df, knn_k, dt_depth, rf_estimators, rf_depth, threshold):
+def get_trained_models(df, lr_c, knn_k, dt_depth, rf_estimators, rf_depth, threshold):
     results = {}
     
     # Train Logistic Regression
-    lr_model, lr_scaler, lr_features, lr_acc, lr_prec, lr_rec, lr_f1, lr_roc, lr_thresh, lr_cm, lr_fpr, lr_tpr = train_lr(df, threshold=threshold)
+    lr_model, lr_scaler, lr_features, lr_acc, lr_prec, lr_rec, lr_f1, lr_roc, lr_thresh, lr_cm, lr_fpr, lr_tpr = train_lr(df, C=lr_c, threshold=threshold)
     results['Logistic Regression'] = {
         'model': lr_model, 'scaler': lr_scaler, 'features': lr_features, 'predict_fn': predict_lr,
         'metrics': {'Accuracy': lr_acc, 'Precision': lr_prec, 'Recall': lr_rec, 'F1-Score': lr_f1, 'ROC-AUC': lr_roc, 'Threshold': lr_thresh},
@@ -98,6 +98,7 @@ if 'square_feet' in df_explore.columns:
 # --- Sidebar ---
 st.sidebar.header("⚙️ Model Hyperparameters")
 st.sidebar.markdown("Tune models dynamically.")
+lr_c = st.sidebar.slider("Logistic Regression: C (Regularization)", min_value=0.01, max_value=10.0, value=1.0, step=0.01)
 knn_k = st.sidebar.slider("KNN: n_neighbors", min_value=1, max_value=25, value=5, step=1)
 dt_depth = st.sidebar.slider("Decision Tree: max_depth", min_value=2, max_value=20, value=10, step=1)
 rf_estimators = st.sidebar.slider("Random Forest: n_estimators", min_value=10, max_value=200, value=100, step=10)
@@ -137,7 +138,7 @@ df_filtered = df_filtered[(df_filtered['price'] >= price_min) & (df_filtered['pr
 df_filtered = df_filtered[df_filtered['bedrooms'] >= filter_beds]
 
 with st.spinner("Training models... This may take a moment."):
-    models_dict = get_trained_models(df_raw, knn_k, dt_depth, rf_estimators, rf_depth, threshold)
+    models_dict = get_trained_models(df_raw, lr_c, knn_k, dt_depth, rf_estimators, rf_depth, threshold)
 
 # --- Generate Predictions for Single Property ---
 input_data = {
