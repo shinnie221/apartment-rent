@@ -17,8 +17,7 @@ from model.rf import train_model as train_rf, predict_property as predict_rf
 @st.cache_data
 def load_data():
     try:
-        # Assuming delimiter is ';' based on the dataset snippet
-        df = pd.read_csv("apartments_for_rent_cleaned.csv", sep=";", on_bad_lines='skip')
+        df = pd.read_csv("apartments_for_rent_fully_prepared.csv")
         
         # Clean price column
         if 'price' in df.columns:
@@ -66,10 +65,6 @@ def get_trained_models(df, lr_c, knn_k, dt_depth, rf_estimators, rf_depth, thres
     
     return results
 
-def count_amenities(x):
-    if pd.isna(x) or str(x).strip().lower() == 'none':
-        return 0
-    return len(str(x).split(','))
 
 # --- Main App ---
 st.title("🏢 Apartment Rent Risk Predictor")
@@ -83,10 +78,16 @@ if df_raw.empty:
 # Basic preprocessing for exploration
 df_explore = df_raw.copy()
 median_price = df_explore['price'].median()
-df_explore['is_high_price'] = (df_explore['price'] > median_price).astype(int)
+
+# is_high_price, amenities_count, pets_allowed_bin already exist in the prepared CSV
+if 'is_high_price' not in df_explore.columns:
+    df_explore['is_high_price'] = (df_explore['price'] > median_price).astype(int)
 df_explore['price_category'] = df_explore['is_high_price'].map({1: 'High Price (Premium)', 0: 'Budget'})
-df_explore['amenities_count'] = df_explore['amenities'].apply(count_amenities)
-df_explore['pets_allowed_bin'] = df_explore['pets_allowed'].apply(lambda x: 0 if pd.isna(x) or str(x).strip().lower() == 'none' else 1)
+
+if 'amenities_count' not in df_explore.columns:
+    df_explore['amenities_count'] = 0
+if 'pets_allowed_bin' not in df_explore.columns:
+    df_explore['pets_allowed_bin'] = 0
 
 for col in ['bedrooms', 'bathrooms']:
     df_explore[col] = pd.to_numeric(df_explore[col], errors='coerce').fillna(0)
