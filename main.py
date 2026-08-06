@@ -211,7 +211,22 @@ with tab1:
         )
         fig_bar.add_hline(y=threshold * 100, line_dash="dash", line_color="red", annotation_text=f"Threshold: {threshold:.2f}")
         fig_bar.update_traces(texttemplate='%{text}%', textposition='outside')
-        fig_bar.update_layout(height=350, yaxis_range=[0, 110])
+
+        # Add input_price as a reference line on secondary y-axis
+        fig_bar.add_trace(go.Scatter(
+            x=df_preds['Model Name'], 
+            y=[input_price] * len(df_preds),
+            mode='lines', 
+            line=dict(color='dodgerblue', width=2, dash='dot'),
+            name=f'Input Price (${input_price:,.0f})',
+            yaxis='y2'
+        ))
+
+        fig_bar.update_layout(
+            height=350, 
+            yaxis=dict(title='High Price Probability %', range=[0, 110]),
+            yaxis2=dict(title='Price ($)', overlaying='y', side='right', showgrid=False),
+        )
         st.plotly_chart(fig_bar, use_container_width=True, config=static_config)
 
     # 3. Property Feature Profile vs Average Market Profile (Radar Chart)
