@@ -28,47 +28,47 @@ def load_data():
         return pd.DataFrame()
 
 @st.cache_resource
-def get_trained_models(df, lr_c, knn_k, dt_depth, rf_estimators, rf_depth, threshold):
+def get_trained_models(df, lr_alpha, knn_k, dt_depth, rf_estimators, rf_depth):
     results = {}
     
-    # Train Logistic Regression
-    lr_model, lr_scaler, lr_features, lr_acc, lr_prec, lr_rec, lr_f1, lr_roc, lr_thresh, lr_cm, lr_fpr, lr_tpr = train_lr(df, C=lr_c, threshold=threshold)
-    results['Logistic Regression'] = {
+    # Train Ridge Regression
+    lr_model, lr_scaler, lr_features, lr_mae, lr_rmse, lr_r2, lr_y_test, lr_y_pred = train_lr(df, alpha=lr_alpha)
+    results['Ridge Regression'] = {
         'model': lr_model, 'scaler': lr_scaler, 'features': lr_features, 'predict_fn': predict_lr,
-        'metrics': {'Accuracy': lr_acc, 'Precision': lr_prec, 'Recall': lr_rec, 'F1-Score': lr_f1, 'ROC-AUC': lr_roc, 'Threshold': lr_thresh},
-        'cm': lr_cm, 'fpr': lr_fpr, 'tpr': lr_tpr
+        'metrics': {'MAE': lr_mae, 'RMSE': lr_rmse, 'R²': lr_r2},
+        'y_test': lr_y_test, 'y_pred': lr_y_pred
     }
     
     # Train KNN
-    knn_model, knn_scaler, knn_features, knn_acc, knn_prec, knn_rec, knn_f1, knn_roc, knn_thresh, knn_cm, knn_fpr, knn_tpr = train_knn(df, n_neighbors=knn_k, threshold=threshold)
+    knn_model, knn_scaler, knn_features, knn_mae, knn_rmse, knn_r2, knn_y_test, knn_y_pred = train_knn(df, n_neighbors=knn_k)
     results['KNN'] = {
         'model': knn_model, 'scaler': knn_scaler, 'features': knn_features, 'predict_fn': predict_knn,
-        'metrics': {'Accuracy': knn_acc, 'Precision': knn_prec, 'Recall': knn_rec, 'F1-Score': knn_f1, 'ROC-AUC': knn_roc, 'Threshold': knn_thresh},
-        'cm': knn_cm, 'fpr': knn_fpr, 'tpr': knn_tpr
+        'metrics': {'MAE': knn_mae, 'RMSE': knn_rmse, 'R²': knn_r2},
+        'y_test': knn_y_test, 'y_pred': knn_y_pred
     }
     
     # Train Decision Tree
-    dt_model, dt_scaler, dt_features, dt_acc, dt_prec, dt_rec, dt_f1, dt_roc, dt_thresh, dt_cm, dt_fpr, dt_tpr = train_dt(df, max_depth=dt_depth, threshold=threshold)
+    dt_model, dt_scaler, dt_features, dt_mae, dt_rmse, dt_r2, dt_y_test, dt_y_pred = train_dt(df, max_depth=dt_depth)
     results['Decision Tree'] = {
         'model': dt_model, 'scaler': dt_scaler, 'features': dt_features, 'predict_fn': predict_dt,
-        'metrics': {'Accuracy': dt_acc, 'Precision': dt_prec, 'Recall': dt_rec, 'F1-Score': dt_f1, 'ROC-AUC': dt_roc, 'Threshold': dt_thresh},
-        'cm': dt_cm, 'fpr': dt_fpr, 'tpr': dt_tpr
+        'metrics': {'MAE': dt_mae, 'RMSE': dt_rmse, 'R²': dt_r2},
+        'y_test': dt_y_test, 'y_pred': dt_y_pred
     }
     
     # Train Random Forest
-    rf_model, rf_scaler, rf_features, rf_acc, rf_prec, rf_rec, rf_f1, rf_roc, rf_thresh, rf_cm, rf_fpr, rf_tpr = train_rf(df, n_estimators=rf_estimators, max_depth=rf_depth, threshold=threshold)
+    rf_model, rf_scaler, rf_features, rf_mae, rf_rmse, rf_r2, rf_y_test, rf_y_pred = train_rf(df, n_estimators=rf_estimators, max_depth=rf_depth)
     results['Random Forest'] = {
         'model': rf_model, 'scaler': rf_scaler, 'features': rf_features, 'predict_fn': predict_rf,
-        'metrics': {'Accuracy': rf_acc, 'Precision': rf_prec, 'Recall': rf_rec, 'F1-Score': rf_f1, 'ROC-AUC': rf_roc, 'Threshold': rf_thresh},
-        'cm': rf_cm, 'fpr': rf_fpr, 'tpr': rf_tpr
+        'metrics': {'MAE': rf_mae, 'RMSE': rf_rmse, 'R²': rf_r2},
+        'y_test': rf_y_test, 'y_pred': rf_y_pred
     }
     
     return results
 
 
 # --- Main App ---
-st.title("🏢 Apartment Rent Risk Predictor")
-st.markdown("Analyze rental properties, predict high rent risk, and compare ML classification models.")
+st.title("🏢 Apartment Rent Price Predictor")
+st.markdown("Enter property features to predict the monthly rent price using multiple ML regression models.")
 
 df_raw = load_data()
 
@@ -99,21 +99,19 @@ if 'square_feet' in df_explore.columns:
 # --- Sidebar ---
 st.sidebar.header("⚙️ Model Hyperparameters")
 st.sidebar.markdown("Tune models dynamically.")
-lr_c = st.sidebar.slider("Logistic Regression: C (Regularization)", min_value=0.01, max_value=10.0, value=1.0, step=0.01)
+lr_alpha = st.sidebar.slider("Ridge Regression: Alpha (Regularization)", min_value=0.01, max_value=10.0, value=1.0, step=0.01)
 knn_k = st.sidebar.slider("KNN: n_neighbors", min_value=1, max_value=25, value=5, step=1)
 dt_depth = st.sidebar.slider("Decision Tree: max_depth", min_value=2, max_value=20, value=10, step=1)
 rf_estimators = st.sidebar.slider("Random Forest: n_estimators", min_value=10, max_value=200, value=100, step=10)
 rf_depth = st.sidebar.slider("Random Forest: max_depth", min_value=2, max_value=20, value=10, step=1)
-threshold = st.sidebar.slider("Probability Threshold", min_value=0.10, max_value=0.90, value=0.50, step=0.01)
 
 st.sidebar.divider()
 
-st.sidebar.header("🎯 Single Property Inputs")
-st.sidebar.markdown("Enter details to predict rent risk.")
+st.sidebar.header("🎯 Property Features (User Input)")
+st.sidebar.markdown("Enter property details to predict rent price.")
 
 input_state_options = sorted([str(s) for s in df_explore['state'].dropna().unique()])
 input_state = st.sidebar.selectbox("State", input_state_options)
-input_price = st.sidebar.number_input("Monthly Rent Price ($)", min_value=100, max_value=100000, value=2500, step=100)
 input_beds = st.sidebar.number_input("Bedrooms", min_value=0, max_value=10, value=2, step=1)
 input_baths = st.sidebar.number_input("Bathrooms", min_value=0.0, max_value=10.0, value=1.0, step=0.5)
 input_sqft = st.sidebar.number_input("Square Feet", min_value=100, max_value=10000, value=1000, step=100)
@@ -141,7 +139,7 @@ df_filtered = df_filtered[df_filtered['bedrooms'] >= filter_beds]
 df_filtered = df_filtered[df_filtered['bathrooms'] >= filter_baths]
 
 with st.spinner("Training models... This may take a moment."):
-    models_dict = get_trained_models(df_raw, lr_c, knn_k, dt_depth, rf_estimators, rf_depth, threshold)
+    models_dict = get_trained_models(df_raw, lr_alpha, knn_k, dt_depth, rf_estimators, rf_depth)
 
 # --- Generate Predictions for Single Property ---
 input_data = {
@@ -155,110 +153,74 @@ input_data = {
 
 predictions = []
 for name, m_info in models_dict.items():
-    _, prob_pct, conf_pct = m_info['predict_fn'](m_info['model'], m_info['scaler'], m_info['features'], input_data)
-    opt_thresh = m_info['metrics']['Threshold']
-    
-    # Adjust prediction and recommendation based on user-selected threshold
-    pred_val = 1 if (prob_pct / 100.0) >= threshold else 0
-    rec = "High Risk" if (prob_pct / 100.0) >= threshold else "Low Risk"
+    predicted_price = m_info['predict_fn'](m_info['model'], m_info['scaler'], m_info['features'], input_data)
     
     predictions.append({
         'Model Name': name,
-        'Prediction': pred_val,
-        'High Price Probability %': round(prob_pct, 2),
-        'Optimal Threshold': round(opt_thresh, 4),
-        'Confidence %': round(conf_pct, 2),
-        'Recommendation': rec
+        'Predicted Price ($)': round(predicted_price, 2),
     })
     
 df_preds = pd.DataFrame(predictions)
-avg_prob = df_preds['High Price Probability %'].mean()
+avg_predicted_price = df_preds['Predicted Price ($)'].mean()
 
 # --- TABS ---
-tab1, tab2, tab3 = st.tabs(["📊 Property Price / Rent Risk", "📈 Data Exploration", "⚙️ Model Performance"])
+tab1, tab2, tab3 = st.tabs(["📊 Price Prediction", "📈 Data Exploration", "⚙️ Model Performance"])
 
 with tab1:
-    st.header("Property Rent Risk Consensus")
+    st.header("Predicted Rent Price")
 
     # Chart config to disable zoom/pan/toolbar
     static_config = {'staticPlot': True, 'displayModeBar': False}
 
-    # 1. High Rent Risk Gauge
-    with st.container():
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = avg_prob,
-            title = {'text': "Average High Rent Risk (%)"},
-            gauge = {
-                'axis': {'range': [0, 100]},
-                'bar': {'color': "darkblue"},
-                'steps': [
-                    {'range': [0, 30], 'color': "lightgreen"},
-                    {'range': [30, 70], 'color': "gold"},
-                    {'range': [70, 100], 'color': "tomato"}],
-                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': threshold * 100}
-            }
-        ))
-        fig_gauge.update_layout(height=350)
-        st.plotly_chart(fig_gauge, use_container_width=True, config=static_config)
+    # 1. Predicted Price Metrics
+    st.subheader("Model Predictions")
+    cols = st.columns(len(predictions))
+    for i, pred in enumerate(predictions):
+        cols[i].metric(pred['Model Name'], f"${pred['Predicted Price ($)']:,.2f}")
+    
+    # Average predicted price
+    st.metric("📊 Average Predicted Price (All Models)", f"${avg_predicted_price:,.2f}")
+    st.caption(f"Market Median Price: ${median_price:,.2f}")
 
-    # 2. Model Consensus Chart
+    # 2. Model Price Comparison Bar Chart
     with st.container():
         fig_bar = px.bar(
-            df_preds, x='Model Name', y='High Price Probability %', 
-            color='Model Name', text='High Price Probability %',
-            title="Model Consensus: Probability of High Price"
+            df_preds, x='Model Name', y='Predicted Price ($)', 
+            color='Model Name', text='Predicted Price ($)',
+            title="Model Price Predictions Comparison"
         )
-        fig_bar.add_hline(y=threshold * 100, line_dash="dash", line_color="red", annotation_text=f"Threshold: {threshold:.2f}")
-        fig_bar.update_traces(texttemplate='%{text}%', textposition='outside')
-
-        # Add input_price as a reference line on secondary y-axis
-        fig_bar.add_trace(go.Scatter(
-            x=df_preds['Model Name'], 
-            y=[input_price] * len(df_preds),
-            mode='lines', 
-            line=dict(color='dodgerblue', width=2, dash='dot'),
-            name=f'Input Price (${input_price:,.0f})',
-            yaxis='y2'
-        ))
-
-        fig_bar.update_layout(
-            height=350, 
-            yaxis=dict(title='High Price Probability %', range=[0, 110]),
-            yaxis2=dict(title='Price ($)', overlaying='y', side='right', showgrid=False),
-        )
+        fig_bar.add_hline(y=median_price, line_dash="dash", line_color="red", annotation_text=f"Median: ${median_price:,.0f}")
+        fig_bar.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+        fig_bar.update_layout(height=400, yaxis_title="Predicted Price ($)")
         st.plotly_chart(fig_bar, use_container_width=True, config=static_config)
 
     # 3. Property Feature Profile vs Average Market Profile (Radar Chart)
     with st.container():
         avg_market = df_explore[['bedrooms', 'bathrooms', 'price', 'amenities_count', 'square_feet']].mean()
         
-        categories = ['Bedrooms', 'Bathrooms', 'Price ($)', 'Amenities Count', 'Square Feet']
+        categories = ['Bedrooms', 'Bathrooms', 'Predicted Price ($)', 'Amenities Count', 'Square Feet']
         fig_radar = go.Figure()
         
         market_vals = [1.0, 1.0, 1.0, 1.0, 1.0]
         prop_vals = [
             input_beds / (avg_market['bedrooms'] or 1),
             input_baths / (avg_market['bathrooms'] or 1),
-            input_price / (avg_market['price'] or 1),
+            avg_predicted_price / (avg_market['price'] or 1),
             len(input_amenities) / (avg_market['amenities_count'] or 1),
             input_sqft / (avg_market['square_feet'] or 1)
         ]
         
         fig_radar.add_trace(go.Scatterpolar(r=market_vals, theta=categories, fill='toself', name='Market Average'))
-        fig_radar.add_trace(go.Scatterpolar(r=prop_vals, theta=categories, fill='toself', name='Selected Property'))
+        fig_radar.add_trace(go.Scatterpolar(r=prop_vals, theta=categories, fill='toself', name='Your Property'))
         fig_radar.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, max(prop_vals + [1.5])])),
             showlegend=True,
-            title="Property vs Market Average (Normalized)"
+            title="Your Property vs Market Average (Normalized)"
         )
         st.plotly_chart(fig_radar, use_container_width=True, config=static_config)
 
     st.subheader("Detailed Model Predictions")
-    st.dataframe(df_preds[['Model Name', 'Prediction', 'High Price Probability %', 'Optimal Threshold', 'Confidence %']], use_container_width=True)
-    
-    st.subheader(f"Model Decision Baseline Table (Threshold = {threshold:.2f})")
-    st.dataframe(df_preds[['Model Name', 'Optimal Threshold', 'Recommendation']].assign(**{'User Threshold': threshold}), use_container_width=True)
+    st.dataframe(df_preds, use_container_width=True)
 
 with tab2:
     st.header("Data Exploration & Understanding")
@@ -308,7 +270,7 @@ with tab2:
         
     # Chart 6: Feature Correlation Matrix
     st.subheader("Feature Correlation Matrix")
-    corr_cols = ['price', 'bedrooms', 'bathrooms', 'amenities_count', 'pets_allowed_bin', 'square_feet', 'is_high_price']
+    corr_cols = ['price', 'bedrooms', 'bathrooms', 'amenities_count', 'pets_allowed_bin', 'square_feet']
     # Filter only columns that exist
     corr_cols = [c for c in corr_cols if c in df_filtered.columns]
     corr_matrix = df_filtered[corr_cols].corr()
@@ -332,44 +294,50 @@ with tab3:
         m = m_info['metrics']
         metrics_data.append({
             'Model': name,
-            'Accuracy': round(m['Accuracy'], 4),
-            'Precision': round(m['Precision'], 4),
-            'Recall': round(m['Recall'], 4),
-            'F1-Score': round(m['F1-Score'], 4),
-            'ROC-AUC': round(m['ROC-AUC'], 4)
+            'MAE ($)': round(m['MAE'], 2),
+            'RMSE ($)': round(m['RMSE'], 2),
+            'R²': round(m['R²'], 4),
         })
     df_metrics = pd.DataFrame(metrics_data)
     
-    st.subheader(f"Model Scorecard Table (Threshold = {threshold:.2f})")
+    st.subheader("Model Scorecard Table")
     st.dataframe(df_metrics, use_container_width=True)
     
     # 2. Performance Comparison Chart
     st.subheader("Performance Comparison")
-    df_melted = df_metrics.melt(id_vars=['Model'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC-AUC'], var_name='Metric', value_name='Score')
+    df_melted = df_metrics.melt(id_vars=['Model'], value_vars=['MAE ($)', 'RMSE ($)'], var_name='Metric', value_name='Value ($)')
     
-    fig_comp = px.bar(df_melted, x='Metric', y='Score', color='Model', barmode='group', title="Metric Comparison across Models")
-    fig_comp.update_layout(yaxis_range=[0, 1.1])
+    fig_comp = px.bar(df_melted, x='Metric', y='Value ($)', color='Model', barmode='group', title="Error Metric Comparison across Models")
     st.plotly_chart(fig_comp, use_container_width=True)
+    
+    # R² comparison
+    fig_r2 = px.bar(df_metrics, x='Model', y='R²', color='Model', title="R² Score Comparison (Higher is Better)", text='R²')
+    fig_r2.update_traces(texttemplate='%{text:.4f}', textposition='outside')
+    fig_r2.update_layout(yaxis_range=[0, max(df_metrics['R²'].max() * 1.2, 1.0)])
+    st.plotly_chart(fig_r2, use_container_width=True)
 
     c_left, c_right = st.columns(2)
     
     with c_left:
-        # 3. Confusion Matrix Heatmap
-        st.subheader("Confusion Matrix Heatmap")
-        selected_model = st.selectbox("Select Model for Confusion Matrix", list(models_dict.keys()))
-        cm = models_dict[selected_model]['cm']
+        # 3. Actual vs Predicted Scatter Plot
+        st.subheader("Actual vs Predicted")
+        selected_model = st.selectbox("Select Model for Scatter Plot", list(models_dict.keys()))
+        y_test = models_dict[selected_model]['y_test']
+        y_pred = models_dict[selected_model]['y_pred']
         
-        # Ensure cm is correct orientation (True Label on Y, Predicted on X)
-        fig_cm = px.imshow(
-            cm, 
-            text_auto=True, 
-            color_continuous_scale="Blues", 
-            labels=dict(x="Predicted Label", y="True Label", color="Count"),
-            x=['Budget', 'Premium'], 
-            y=['Budget', 'Premium'], 
-            title=f"Confusion Matrix: {selected_model}"
+        fig_scatter = go.Figure()
+        fig_scatter.add_trace(go.Scatter(x=y_test, y=y_pred, mode='markers', opacity=0.5, name='Predictions'))
+        # Perfect prediction line
+        min_val = min(y_test.min(), y_pred.min())
+        max_val = max(y_test.max(), y_pred.max())
+        fig_scatter.add_trace(go.Scatter(x=[min_val, max_val], y=[min_val, max_val], mode='lines', 
+                                          line=dict(dash='dash', color='red'), name='Perfect Prediction'))
+        fig_scatter.update_layout(
+            title=f"Actual vs Predicted: {selected_model}",
+            xaxis_title="Actual Price ($)",
+            yaxis_title="Predicted Price ($)",
         )
-        st.plotly_chart(fig_cm, use_container_width=True)
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
     with c_right:
         # 4. Feature Importance
@@ -390,12 +358,19 @@ with tab3:
             else:
                 st.warning("Selected model does not support feature importance calculation.")
                 
-    # 5. ROC Curve for all models
-    st.subheader("ROC Curves Comparison")
-    fig_roc = go.Figure()
-    for name, m_info in models_dict.items():
-        fig_roc.add_trace(go.Scatter(x=m_info['fpr'], y=m_info['tpr'], mode='lines', name=f"{name} (AUC={m_info['metrics']['ROC-AUC']:.2f})"))
-    fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode='lines', line=dict(dash='dash', color='gray'), name='Random Guess (AUC=0.50)'))
-    fig_roc.update_layout(title="ROC Curve for All Models", xaxis_title="False Positive Rate", yaxis_title="True Positive Rate", hovermode="x unified")
-    st.plotly_chart(fig_roc, use_container_width=True)
-
+    # 5. Residual Plot
+    st.subheader("Residual Plot")
+    selected_model_resid = st.selectbox("Select Model for Residual Plot", list(models_dict.keys()), key="resid_model")
+    y_test_r = models_dict[selected_model_resid]['y_test']
+    y_pred_r = models_dict[selected_model_resid]['y_pred']
+    residuals = y_test_r - y_pred_r
+    
+    fig_resid = go.Figure()
+    fig_resid.add_trace(go.Scatter(x=y_pred_r, y=residuals, mode='markers', opacity=0.5, name='Residuals'))
+    fig_resid.add_hline(y=0, line_dash="dash", line_color="red")
+    fig_resid.update_layout(
+        title=f"Residual Plot: {selected_model_resid}",
+        xaxis_title="Predicted Price ($)",
+        yaxis_title="Residual (Actual - Predicted) ($)",
+    )
+    st.plotly_chart(fig_resid, use_container_width=True)

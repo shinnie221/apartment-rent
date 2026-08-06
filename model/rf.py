@@ -2,48 +2,39 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, confusion_matrix, roc_auc_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from .pipeline import preprocess_data
 
-def train_model(df, n_estimators=100, max_depth=10, threshold=0.5):
+def train_model(df, n_estimators=100, max_depth=10):
     df_processed = preprocess_data(df)
     
     feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']
     state_cols = [col for col in df_processed.columns if col.startswith('state_')]
     feature_cols.extend(state_cols)
     
-    df_processed = df_processed.dropna(subset=feature_cols + ['is_high_price'])
+    df_processed = df_processed.dropna(subset=feature_cols + ['price'])
     
     X = df_processed[feature_cols]
-    y = df_processed['is_high_price']
+    y = df_processed['price']
     
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = RandomForestClassifier(random_state=42, n_estimators=n_estimators, max_depth=max_depth)
+    model = RandomForestRegressor(random_state=42, n_estimators=n_estimators, max_depth=max_depth)
     model.fit(X_train_scaled, y_train)
     
-    y_pred_proba = model.predict_proba(X_test_scaled)[:, 1]
+    y_pred = model.predict(X_test_scaled)
     
-    fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
-    j_scores = tpr - fpr
-    optimal_idx = np.argmax(j_scores)
-    optimal_threshold = thresholds[optimal_idx]
+    # Regression metrics
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    r2 = r2_score(y_test, y_pred)
     
-    y_pred = (y_pred_proba >= threshold).astype(int)
-    
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, zero_division=0)
-    recall = recall_score(y_test, y_pred, zero_division=0)
-    f1 = f1_score(y_test, y_pred, zero_division=0)
-    cm = confusion_matrix(y_test, y_pred)
-    roc_auc = roc_auc_score(y_test, y_pred_proba)
-    
-    return model, scaler, feature_cols, accuracy, precision, recall, f1, roc_auc, optimal_threshold, cm, fpr, tpr
+    return model, scaler, feature_cols, mae, rmse, r2, y_test.values, y_pred
 
 def predict_property(model, scaler, feature_names, input_data):
     df_in = pd.DataFrame([input_data])
@@ -62,11 +53,6 @@ def predict_property(model, scaler, feature_names, input_data):
             
     X_in_scaled = scaler.transform(X_in)
     
-    proba = model.predict_proba(X_in_scaled)[0]
-    prob_class_1 = proba[1]
+    predicted_price = model.predict(X_in_scaled)[0]
     
-    prediction = 1 if prob_class_1 >= 0.5 else 0
-    probability_pct = prob_class_1 * 100
-    confidence_pct = max(proba) * 100
-    
-    return prediction, probability_pct, confidence_pct
+    return predicted_price
