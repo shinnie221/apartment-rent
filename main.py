@@ -122,7 +122,7 @@ amenity_options = ["Gym", "Pool", "Parking", "Washer/Dryer", "AC", "Balcony"]
 input_amenities = st.sidebar.multiselect("Amenities", amenity_options, default=["Parking", "AC"])
 
 st.sidebar.divider()
-st.sidebar.header("🔎 Filtering Engine")
+st.sidebar.header("🔎 Search Apartments in Wider Dataset")
 st.sidebar.markdown("Filter dataset for Data Exploration (Tab 2).")
 filter_state = st.sidebar.selectbox("Filter State", ["All"] + input_state_options)
 price_min, price_max = st.sidebar.slider("Price Range", float(df_explore['price'].min(skipna=True)), 10000.0, (500.0, 5000.0))
