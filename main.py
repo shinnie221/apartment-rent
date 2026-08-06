@@ -13,7 +13,7 @@ from model.knn import train_model as train_knn, predict_property as predict_knn
 from model.dt import train_model as train_dt, predict_property as predict_dt
 from model.rf import train_model as train_rf, predict_property as predict_rf
 
-# --- Helper Functions ---
+
 @st.cache_data
 def load_data():
     try:
@@ -127,6 +127,7 @@ st.sidebar.markdown("Filter dataset for Data Exploration (Tab 2).")
 filter_state = st.sidebar.selectbox("Filter State", ["All"] + input_state_options)
 price_min, price_max = st.sidebar.slider("Price Range", float(df_explore['price'].min(skipna=True)), 10000.0, (500.0, 5000.0))
 filter_beds = st.sidebar.slider("Minimum Bedrooms", 0, 10, 0)
+filter_baths = st.sidebar.slider("Minimum Bathrooms", 0.0, 10.0, 0.0, step=0.5)
 
 if st.sidebar.button("Reset Filters"):
     st.rerun()
@@ -137,6 +138,7 @@ if filter_state != "All":
     df_filtered = df_filtered[df_filtered['state'] == filter_state]
 df_filtered = df_filtered[(df_filtered['price'] >= price_min) & (df_filtered['price'] <= price_max)]
 df_filtered = df_filtered[df_filtered['bedrooms'] >= filter_beds]
+df_filtered = df_filtered[df_filtered['bathrooms'] >= filter_baths]
 
 with st.spinner("Training models... This may take a moment."):
     models_dict = get_trained_models(df_raw, lr_c, knn_k, dt_depth, rf_estimators, rf_depth, threshold)
