@@ -9,12 +9,6 @@ def preprocess_data(df):
         df['price'] = pd.to_numeric(df['price'], errors='coerce')
         df = df.dropna(subset=['price'])
     
-    #is_high_price: use existing column if present, otherwise compute from median
-    if 'is_high_price' not in df.columns:
-        if 'price' in df.columns:
-            median_price = df['price'].median()
-            df['is_high_price'] = (df['price'] > median_price).astype(int)
-    
     #amenities_count: use existing column if present, otherwise derive from amenities text
     if 'amenities_count' not in df.columns:
         def count_amenities(x):

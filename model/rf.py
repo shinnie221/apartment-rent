@@ -16,7 +16,7 @@ def train_model(df, n_estimators=100, max_depth=10):
     df_processed = df_processed.dropna(subset=feature_cols + ['price'])
     
     X = df_processed[feature_cols]
-    y = df_processed['price']
+    y = df_processed['price']  # Continuous Target Variable
     
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
@@ -34,17 +34,20 @@ def train_model(df, n_estimators=100, max_depth=10):
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     r2 = r2_score(y_test, y_pred)
     
-    return model, scaler, feature_cols, mae, rmse, r2, y_test.values, y_pred
+    return model, scaler, feature_cols, mae, rmse, r2
 
 def predict_property(model, scaler, feature_names, input_data):
+    """
+    input_data should be a dict like:
+    {'bedrooms': 2, 'bathrooms': 1, 'pets_allowed_bin': 1, 'amenities_count': 3, 'square_feet': 1000, 'state': 'CA'}
+    Returns the predicted monthly rental price in USD.
+    """
     df_in = pd.DataFrame([input_data])
     X_in = pd.DataFrame(0, index=np.arange(1), columns=feature_names)
     
-    if 'bedrooms' in df_in.columns: X_in['bedrooms'] = df_in['bedrooms'].values[0]
-    if 'bathrooms' in df_in.columns: X_in['bathrooms'] = df_in['bathrooms'].values[0]
-    if 'pets_allowed_bin' in df_in.columns: X_in['pets_allowed_bin'] = df_in['pets_allowed_bin'].values[0]
-    if 'amenities_count' in df_in.columns: X_in['amenities_count'] = df_in['amenities_count'].values[0]
-    if 'square_feet' in df_in.columns: X_in['square_feet'] = df_in['square_feet'].values[0]
+    for col in ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']:
+        if col in df_in.columns:
+            X_in[col] = df_in[col].values[0]
     
     if 'state' in df_in.columns:
         state_col = f"state_{df_in['state'].values[0]}"
@@ -53,6 +56,6 @@ def predict_property(model, scaler, feature_names, input_data):
             
     X_in_scaled = scaler.transform(X_in)
     
-    predicted_price = model.predict(X_in_scaled)[0]
+    predicted_rent = model.predict(X_in_scaled)[0]
     
-    return predicted_price
+    return max(0.0, float(predicted_rent))  # Ensure valid non-negative rent
