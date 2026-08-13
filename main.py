@@ -32,7 +32,7 @@ def load_data():
 
 
 @st.cache_resource
-def get_trained_models(_df):
+def get_trained_models(_df, knn_n_neighbors=5, dt_max_depth=10, rf_n_estimators=100, rf_max_depth=10):
     """Train all 4 models and return results dict (including y_test / y_pred)."""
     results = {}
 
@@ -46,7 +46,7 @@ def get_trained_models(_df):
     }
 
     # KNN
-    knn_model, knn_scaler, knn_features, knn_mae, knn_rmse, knn_r2, knn_yt, knn_yp = train_knn(_df)
+    knn_model, knn_scaler, knn_features, knn_mae, knn_rmse, knn_r2, knn_yt, knn_yp = train_knn(_df, n_neighbors=knn_n_neighbors)
     results['KNN Regressor'] = {
         'model': knn_model, 'scaler': knn_scaler, 'features': knn_features,
         'predict_fn': predict_knn,
@@ -55,7 +55,7 @@ def get_trained_models(_df):
     }
 
     # Decision Tree
-    dt_model, dt_scaler, dt_features, dt_mae, dt_rmse, dt_r2, dt_yt, dt_yp = train_dt(_df)
+    dt_model, dt_scaler, dt_features, dt_mae, dt_rmse, dt_r2, dt_yt, dt_yp = train_dt(_df, max_depth=dt_max_depth)
     results['Decision Tree'] = {
         'model': dt_model, 'scaler': dt_scaler, 'features': dt_features,
         'predict_fn': predict_dt,
@@ -64,7 +64,7 @@ def get_trained_models(_df):
     }
 
     # Random Forest
-    rf_model, rf_scaler, rf_features, rf_mae, rf_rmse, rf_r2, rf_yt, rf_yp = train_rf(_df)
+    rf_model, rf_scaler, rf_features, rf_mae, rf_rmse, rf_r2, rf_yt, rf_yp = train_rf(_df, n_estimators=rf_n_estimators, max_depth=rf_max_depth)
     results['Random Forest'] = {
         'model': rf_model, 'scaler': rf_scaler, 'features': rf_features,
         'predict_fn': predict_rf,
@@ -127,8 +127,49 @@ df_raw = load_data()
 if df_raw.empty:
     st.stop()
 
+# ──────────────────────────────────────────────
+#  SIDEBAR – MODEL HYPERPARAMETERS
+# ──────────────────────────────────────────────
+st.sidebar.header("🧠 Model Hyperparameters")
+st.sidebar.caption("Adjust parameters below and models will retrain automatically.")
+
+# KNN
+st.sidebar.markdown("**KNN Regressor**")
+sidebar_knn_k = st.sidebar.slider(
+    "n_neighbors (K)", min_value=1, max_value=20, value=5, step=1,
+    help="Number of neighbors to use for KNN."
+)
+
+# Decision Tree
+st.sidebar.markdown("**Decision Tree**")
+sidebar_dt_depth = st.sidebar.slider(
+    "max_depth (DT)", min_value=1, max_value=30, value=10, step=1,
+    help="Maximum depth of the decision tree."
+)
+
+# Random Forest
+st.sidebar.markdown("**Random Forest**")
+sidebar_rf_estimators = st.sidebar.slider(
+    "n_estimators (RF)", min_value=10, max_value=300, value=100, step=10,
+    help="Number of trees in the random forest."
+)
+sidebar_rf_depth = st.sidebar.slider(
+    "max_depth (RF)", min_value=1, max_value=30, value=10, step=1,
+    help="Maximum depth of each tree in the random forest."
+)
+
+st.sidebar.markdown("**Linear Regression** — _no tunable hyperparameters_")
+
+st.sidebar.divider()
+
 with st.spinner("Training models... This may take a moment."):
-    models_dict = get_trained_models(df_raw)
+    models_dict = get_trained_models(
+        df_raw,
+        knn_n_neighbors=sidebar_knn_k,
+        dt_max_depth=sidebar_dt_depth,
+        rf_n_estimators=sidebar_rf_estimators,
+        rf_max_depth=sidebar_rf_depth,
+    )
 
 # Basic preprocessing for exploration
 df_explore = df_raw.copy()
