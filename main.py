@@ -462,8 +462,8 @@ with tab1:
             bed_counts5['Bedrooms'] = bed_counts5['Bedrooms'].astype(int).astype(str) + ' Bed'
             fig5_pie = px.pie(bed_counts5, names='Bedrooms', values='Count',
                               color_discrete_sequence=px.colors.qualitative.Pastel1)
-            fig5_pie.update_traces(textinfo='label+percent', textposition='outside')
-            fig5_pie.update_layout(height=420)
+            fig5_pie.update_traces(textinfo='percent+label', textposition='auto')
+            fig5_pie.update_layout(height=420, showlegend=True)
             st.plotly_chart(fig5_pie, use_container_width=True, config=static_config, key="chart_5")
 
         # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
@@ -476,31 +476,7 @@ with tab1:
                             color_discrete_sequence=['#AB63FA'])
             fig13.update_layout(height=420, xaxis_tickangle=-45)
             st.plotly_chart(fig13, use_container_width=True, config=static_config, key="chart_13")
-
-        # Chart 14: 2D Matrix Heatmap — bedrooms × bathrooms vs. price
-        st.markdown("##### Chart 14 · Bedrooms × Bathrooms → Average Rent (2D Matrix Heatmap)")
-        pivot14 = df_filtered.pivot_table(index='bathrooms', columns='bedrooms', values='price',
-                                           aggfunc='mean', observed=True)
-        fig14 = px.imshow(pivot14, text_auto='$,.0f', aspect='auto',
-                          color_continuous_scale='RdYlGn',
-                          labels={'x': 'Bedrooms', 'y': 'Bathrooms', 'color': 'Avg Rent ($)'})
-        fig14.update_layout(height=450)
-        st.plotly_chart(fig14, use_container_width=True, config=static_config, key="chart_14")
-
-        # Chart 15: 2D Pivot Heatmap — square_feet (binned) × bedrooms
-        st.markdown("##### Chart 15 · Square Feet Tier × Bedrooms (2D Pivot Heatmap)")
-        df_h15 = df_filtered.dropna(subset=['square_feet']).copy()
-        df_h15['sqft_tier'] = pd.cut(df_h15['square_feet'],
-                                      bins=[0, 500, 800, 1200, 1800, 100000],
-                                      labels=['<500', '500–800', '800–1200', '1200–1800', '1800+'])
-        pivot15 = df_h15.pivot_table(index='sqft_tier', columns='bedrooms', values='square_feet',
-                                      aggfunc='median', fill_value=0, observed=True)
-        fig15 = px.imshow(pivot15, text_auto='.0f', aspect='auto',
-                          color_continuous_scale='YlGnBu',
-                          labels={'x': 'Bedrooms', 'y': 'Square Feet Tier', 'color': 'Median Sq Ft'})
-        fig15.update_layout(height=450)
-        st.plotly_chart(fig15, use_container_width=True, config=static_config, key="chart_15")
-
+    
         col_l3, col_l4 = st.columns(2)
 
         # Chart 16: Pie Chart — bedrooms (Market Share Split)
@@ -514,8 +490,8 @@ with tab1:
             agg16.columns = ['Bedrooms', 'Count']
             fig16 = px.pie(agg16, names='Bedrooms', values='Count',
                            color_discrete_sequence=px.colors.qualitative.Set2)
-            fig16.update_traces(textinfo='label+percent', textposition='outside')
-            fig16.update_layout(height=420)
+            fig16.update_traces(textinfo='percent+label', textposition='auto')
+            fig16.update_layout(height=420, showlegend=True)
             st.plotly_chart(fig16, use_container_width=True, config=static_config, key="chart_16")
 
         # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
@@ -751,23 +727,3 @@ with tab4:
         sel_pred = sel_info['predict_fn'](sel_info['model'], sel_info['scaler'], sel_info['features'], input_data)
 
         st.success(f"### 🏷️ Estimated Monthly Rent ({pred_model_name}): **${sel_pred:,.2f}**")
-
-        st.divider()
-
-        # All‑model comparison
-        st.subheader("All Models Comparison")
-        all_preds = []
-        for name, m_info in models_dict.items():
-            p = m_info['predict_fn'](m_info['model'], m_info['scaler'], m_info['features'], input_data)
-            all_preds.append({'Model': name, 'Predicted Rent ($)': f"${p:,.2f}", 'Value': p})
-        df_all = pd.DataFrame(all_preds)
-
-        st.dataframe(df_all[['Model', 'Predicted Rent ($)']], use_container_width=True, hide_index=True)
-
-        fig_pred = px.bar(df_all, x='Model', y='Value', color='Model',
-                          text='Predicted Rent ($)',
-                          labels={'Value': 'Estimated Rent ($)'},
-                          color_discrete_sequence=px.colors.qualitative.Set2)
-        fig_pred.update_traces(textposition='outside')
-        fig_pred.update_layout(height=420, yaxis_title="Estimated Rent ($)")
-        st.plotly_chart(fig_pred, use_container_width=True, config=static_config, key="chart_tab4_pred")
