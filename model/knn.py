@@ -9,7 +9,10 @@ from .pipeline import preprocess_data
 def train_model(df, n_neighbors=5, max_eval_samples=3000):
     df_processed = preprocess_data(df)
     
-    feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']
+    feature_cols = [
+        'bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet',
+        'latitude', 'longitude', 'sqft_per_room', 'bath_bed_ratio', 'city_mean_price'
+    ]
     state_cols = [col for col in df_processed.columns if col.startswith('state_')]
     feature_cols.extend(state_cols)
     
@@ -24,7 +27,7 @@ def train_model(df, n_neighbors=5, max_eval_samples=3000):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = KNeighborsRegressor(n_neighbors=n_neighbors, algorithm='kd_tree', n_jobs=-1)
+    model = KNeighborsRegressor(n_neighbors=n_neighbors, weights='distance', algorithm='kd_tree', n_jobs=-1)
     model.fit(X_train_scaled, y_train)
     
     # Subsample test set for fast metrics calculation if test set is large
@@ -53,19 +56,31 @@ def predict_property(model, scaler, feature_names, input_data):
     Returns the predicted monthly rental price in USD.
     """
     df_in = pd.DataFrame([input_data])
-    X_in = pd.DataFrame(0, index=np.arange(1), columns=feature_names)
+    X_in = pd.DataFrame(0.0, index=np.arange(1), columns=feature_names)
     
-    for col in ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']:
+    beds = float(df_in.get('bedrooms', [2])[0] if 'bedrooms' in df_in.columns else 2)
+    baths = float(df_in.get('bathrooms', [1])[0] if 'bathrooms' in df_in.columns else 1)
+    sqft = float(df_in.get('square_feet', [1000])[0] if 'square_feet' in df_in.columns else 1000)
+    
+    df_in['sqft_per_room'] = sqft / (beds + baths + 1)
+    df_in['bath_bed_ratio'] = baths / (beds + 1)
+    if 'latitude' not in df_in.columns:
+        df_in['latitude'] = 37.0
+    if 'longitude' not in df_in.columns:
+        df_in['longitude'] = -95.0
+    if 'city_mean_price' not in df_in.columns:
+        df_in['city_mean_price'] = float(input_data.get('city_mean_price', 1500.0))
+        
+    for col in feature_names:
         if col in df_in.columns:
-            X_in[col] = df_in[col].values[0]
-    
+            X_in[col] = float(df_in[col].values[0])
+            
     if 'state' in df_in.columns:
         state_col = f"state_{df_in['state'].values[0]}"
         if state_col in X_in.columns:
-            X_in[state_col] = 1
+            X_in[state_col] = 1.0
             
     X_in_scaled = scaler.transform(X_in)
-    
     predicted_rent = model.predict(X_in_scaled)[0]
     
     return max(0.0, float(predicted_rent))  # Ensure valid non-negative rent

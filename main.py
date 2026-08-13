@@ -663,6 +663,11 @@ def render_price_predictor():
                                     list(models_dict.keys()), key='pred_model')
 
     if st.button("Predict Rent", type="primary", use_container_width=True):
+        state_df = df_explore[df_explore['state'] == pred_state]
+        state_lat = float(state_df['latitude'].median()) if len(state_df) > 0 and 'latitude' in state_df.columns else 37.0
+        state_lon = float(state_df['longitude'].median()) if len(state_df) > 0 and 'longitude' in state_df.columns else -95.0
+        state_mean_price = float(state_df['price'].mean()) if len(state_df) > 0 and 'price' in state_df.columns else 1500.0
+
         input_data = {
             'bedrooms': pred_beds,
             'bathrooms': pred_baths,
@@ -670,6 +675,9 @@ def render_price_predictor():
             'amenities_count': len(pred_amenities),
             'square_feet': pred_sqft,
             'state': pred_state,
+            'latitude': state_lat,
+            'longitude': state_lon,
+            'city_mean_price': state_mean_price,
         }
 
         # Selected model prediction
