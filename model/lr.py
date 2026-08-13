@@ -41,7 +41,7 @@ def train_model(df):
     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
     r2 = r2_score(y_test, y_pred)
     
-    return model, scaler, feature_cols, mae, rmse, r2
+    return model, scaler, feature_cols, mae, rmse, r2, y_test, y_pred
 
 def predict_property(model, scaler, feature_names, input_data):
     """
