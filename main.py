@@ -432,9 +432,9 @@ with tab1:
             fig11 = go.Figure(data=[go.Pie(
                 labels=agg11['Pet Policy'], values=agg11['Count'],
                 hole=0.5, marker_colors=['#EF553B', '#00CC96'],
-                textinfo='label+percent', textposition='outside'
+                textinfo='percent+label', textposition='inside'
             )])
-            fig11.update_layout(height=420, showlegend=True)
+            fig11.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True)
             st.plotly_chart(fig11, use_container_width=True, config=static_config, key="chart_11")
 
         # Chart 12: Line Graph (with Markers) — amenities_count vs. price
@@ -462,8 +462,8 @@ with tab1:
             bed_counts5['Bedrooms'] = bed_counts5['Bedrooms'].astype(int).astype(str) + ' Bed'
             fig5_pie = px.pie(bed_counts5, names='Bedrooms', values='Count',
                               color_discrete_sequence=px.colors.qualitative.Pastel1)
-            fig5_pie.update_traces(textinfo='percent+label', textposition='auto')
-            fig5_pie.update_layout(height=420, showlegend=True)
+            fig5_pie.update_traces(textinfo='percent+label', textposition='inside', insidetextorientation='horizontal')
+            fig5_pie.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True)
             st.plotly_chart(fig5_pie, use_container_width=True, config=static_config, key="chart_5")
 
         # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
@@ -474,7 +474,7 @@ with tab1:
             fig13 = px.line(top_cities13, x='City', y='Count', markers=True,
                             labels={'City': 'City Name', 'Count': 'Number of Apartments'},
                             color_discrete_sequence=['#AB63FA'])
-            fig13.update_layout(height=420, xaxis_tickangle=-45)
+            fig13.update_layout(height=450, xaxis_tickangle=-45)
             st.plotly_chart(fig13, use_container_width=True, config=static_config, key="chart_13")
     
         col_l3, col_l4 = st.columns(2)
@@ -490,8 +490,8 @@ with tab1:
             agg16.columns = ['Bedrooms', 'Count']
             fig16 = px.pie(agg16, names='Bedrooms', values='Count',
                            color_discrete_sequence=px.colors.qualitative.Set2)
-            fig16.update_traces(textinfo='percent+label', textposition='auto')
-            fig16.update_layout(height=420, showlegend=True)
+            fig16.update_traces(textinfo='percent+label', textposition='inside', insidetextorientation='horizontal')
+            fig16.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True)
             st.plotly_chart(fig16, use_container_width=True, config=static_config, key="chart_16")
 
         # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
@@ -673,17 +673,6 @@ with tab3:
     st.subheader("Dataset Preview")
     preview_n = st.slider("Number of rows to display", min_value=5, max_value=100, value=20, step=5)
     st.dataframe(df_explore.head(preview_n), use_container_width=True, hide_index=True)
-
-    # Column info
-    st.subheader("Column Information")
-    col_info = pd.DataFrame({
-        'Column': df_explore.columns,
-        'Data Type': [str(d) for d in df_explore.dtypes],
-        'Non‑Null Count': [df_explore[c].notna().sum() for c in df_explore.columns],
-        'Null Count': [df_explore[c].isna().sum() for c in df_explore.columns],
-    })
-    st.dataframe(col_info, use_container_width=True, hide_index=True)
-
 
 # ═══════════════════════════════════════════════
 #  TAB 4 — PRICE PREDICTOR
