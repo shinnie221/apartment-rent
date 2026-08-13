@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 def preprocess_data(df):
 
@@ -11,25 +12,25 @@ def preprocess_data(df):
     
     #amenities_count: use existing column if present, otherwise derive from amenities text
     if 'amenities_count' not in df.columns:
-        def count_amenities(x):
-            if pd.isna(x) or str(x).strip().lower() == 'none':
-                return 0
-            return len(str(x).split(','))
-        
         if 'amenities' in df.columns:
-            df['amenities_count'] = df['amenities'].apply(count_amenities)
+            s_amenities = df['amenities'].fillna('')
+            df['amenities_count'] = np.where(
+                s_amenities.str.strip().str.lower().isin(['', 'none']),
+                0,
+                s_amenities.str.count(',') + 1
+            )
         else:
             df['amenities_count'] = 0
     
     #pets_allowed_bin: use existing column if present, otherwise derive from pets_allowed text
     if 'pets_allowed_bin' not in df.columns:
-        def has_pets(x):
-            if pd.isna(x) or str(x).strip().lower() == 'none':
-                return 0
-            return 1
-        
         if 'pets_allowed' in df.columns:
-            df['pets_allowed_bin'] = df['pets_allowed'].apply(has_pets)
+            s_pets = df['pets_allowed'].fillna('')
+            df['pets_allowed_bin'] = np.where(
+                s_pets.str.strip().str.lower().isin(['', 'none']),
+                0,
+                1
+            )
         else:
             df['pets_allowed_bin'] = 0
 

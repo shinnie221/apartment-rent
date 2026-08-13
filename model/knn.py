@@ -6,7 +6,7 @@ from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from .pipeline import preprocess_data
 
-def train_model(df, n_neighbors=5):
+def train_model(df, n_neighbors=5, max_eval_samples=3000):
     df_processed = preprocess_data(df)
     
     feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']
@@ -24,17 +24,27 @@ def train_model(df, n_neighbors=5):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = KNeighborsRegressor(n_neighbors=n_neighbors)
+    model = KNeighborsRegressor(n_neighbors=n_neighbors, algorithm='kd_tree', n_jobs=-1)
     model.fit(X_train_scaled, y_train)
     
-    y_pred = model.predict(X_test_scaled)
+    # Subsample test set for fast metrics calculation if test set is large
+    if len(X_test_scaled) > max_eval_samples:
+        np.random.seed(42)
+        eval_idx = np.random.choice(len(X_test_scaled), size=max_eval_samples, replace=False)
+        X_eval = X_test_scaled[eval_idx]
+        y_eval = y_test.iloc[eval_idx]
+    else:
+        X_eval = X_test_scaled
+        y_eval = y_test
+        
+    y_pred = model.predict(X_eval)
     
     # Regression metrics
-    mae = mean_absolute_error(y_test, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    r2 = r2_score(y_test, y_pred)
+    mae = mean_absolute_error(y_eval, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_eval, y_pred))
+    r2 = r2_score(y_eval, y_pred)
     
-    return model, scaler, feature_cols, mae, rmse, r2, y_test, y_pred
+    return model, scaler, feature_cols, mae, rmse, r2, y_eval, y_pred
 
 def predict_property(model, scaler, feature_names, input_data):
     """

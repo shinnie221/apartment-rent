@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from .pipeline import preprocess_data
 
-def train_model(df, n_estimators=100, max_depth=10):
+def train_model(df, n_estimators=40, max_depth=10, max_samples=0.5):
     df_processed = preprocess_data(df)
     
     feature_cols = ['bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet']
@@ -24,7 +24,13 @@ def train_model(df, n_estimators=100, max_depth=10):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = RandomForestRegressor(random_state=42, n_estimators=n_estimators, max_depth=max_depth)
+    model = RandomForestRegressor(
+        random_state=42, 
+        n_estimators=n_estimators, 
+        max_depth=max_depth, 
+        max_samples=max_samples,
+        n_jobs=-1
+    )
     model.fit(X_train_scaled, y_train)
     
     y_pred = model.predict(X_test_scaled)

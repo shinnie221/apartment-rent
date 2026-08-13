@@ -30,7 +30,7 @@ def train_model(df):
     X_test_scaled = scaler.transform(X_test)
     
     # Train model
-    model = LinearRegression()
+    model = LinearRegression(n_jobs=-1)
     model.fit(X_train_scaled, y_train)
     
     # Predict on test
