@@ -190,6 +190,9 @@ df_explore['price_per_sqft'] = np.where(
     np.nan
 )
 
+# Derived column for lat-lon difference chart
+df_explore['lat_lon_diff'] = df_explore['latitude'] - df_explore['longitude']
+
 # ──────────────────────────────────────────────
 #  SIDEBAR – GLOBAL FILTERS
 # ──────────────────────────────────────────────
@@ -293,6 +296,40 @@ with tab1:
         fig3.update_layout(height=450)
         st.plotly_chart(fig3, use_container_width=True, config=static_config)
 
+        # Chart 3B: Distribution of Apartment Prices — Histogram
+        st.markdown("##### Chart 3B · Distribution of Apartment Prices (Histogram)")
+        df_price_hist = df_filtered.dropna(subset=['price']).copy()
+        q99_price = df_price_hist['price'].quantile(0.99)
+        df_price_hist = df_price_hist[df_price_hist['price'] <= q99_price]
+        fig3b = px.histogram(df_price_hist, x='price', nbins=50,
+                             labels={'price': 'Price ($)', 'count': 'Frequency'},
+                             color_discrete_sequence=['#87CEEB'])
+        fig3b.update_layout(height=450, xaxis_title='Price ($)', yaxis_title='Frequency')
+        st.plotly_chart(fig3b, use_container_width=True, config=static_config)
+
+        # Chart 3C: Average Apartment Price by State (Top 10 by listing count)
+        st.markdown("##### Chart 3C · Average Price by State (Top 10 by Listing Count)")
+        state_counts = df_filtered['state'].value_counts()
+        top_10_states_by_count = state_counts.head(10).index.tolist()
+        df_top10_listing = df_filtered[df_filtered['state'].isin(top_10_states_by_count)]
+        avg_price_by_state = df_top10_listing.groupby('state', as_index=False)['price'].mean() \
+            .sort_values('price', ascending=False)
+        fig3c = px.bar(avg_price_by_state, x='state', y='price',
+                       labels={'price': 'Average Price ($)', 'state': 'State'},
+                       color='price', color_continuous_scale='Viridis')
+        fig3c.update_layout(height=500, xaxis_tickangle=-45)
+        st.plotly_chart(fig3c, use_container_width=True, config=static_config)
+
+        # Chart 3D: Distribution of Latitude-Longitude Difference — Histogram
+        st.markdown("##### Chart 3D · Distribution of Latitude–Longitude Difference")
+        df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
+        fig3d = px.histogram(df_latlon, x='lat_lon_diff', nbins=50,
+                             labels={'lat_lon_diff': 'Latitude − Longitude Difference', 'count': 'Number of Apartments'},
+                             color_discrete_sequence=['#87CEEB'])
+        fig3d.update_layout(height=450, xaxis_title='Latitude − Longitude Difference',
+                            yaxis_title='Number of Apartments')
+        st.plotly_chart(fig3d, use_container_width=True, config=static_config)
+
     # ═════════════════════════════════════════════
     #  SUB‑TAB 2 — Single Feature vs Price Drivers
     # ═════════════════════════════════════════════
@@ -373,6 +410,16 @@ with tab1:
         fig9.update_layout(height=400)
         st.plotly_chart(fig9, use_container_width=True, config=static_config)
 
+        # Chart 9B: Top 10 Cities by Number of Apartments — Line Chart
+        st.markdown("##### Chart 9B · Top 10 Cities by Number of Apartments (Line)")
+        top_cities_count = df_filtered['cityname'].value_counts().head(10).reset_index()
+        top_cities_count.columns = ['City', 'Count']
+        fig9b = px.line(top_cities_count, x='City', y='Count', markers=True,
+                        labels={'City': 'City Name', 'Count': 'Number of Apartments'},
+                        color_discrete_sequence=['#AB63FA'])
+        fig9b.update_layout(height=450, xaxis_tickangle=-45)
+        st.plotly_chart(fig9b, use_container_width=True, config=static_config)
+
     # ═════════════════════════════════════════════
     #  SUB‑TAB 3 — Physical Layout & Floorplan
     # ═════════════════════════════════════════════
@@ -408,6 +455,17 @@ with tab1:
                            color_discrete_sequence=px.colors.qualitative.Set2)
             fig11.update_layout(height=420)
             st.plotly_chart(fig11, use_container_width=True, config=static_config)
+
+        # Chart 11B: Bedrooms Distribution — Pie Chart
+        st.markdown("##### Chart 11B · Bedrooms Distribution (Pie Chart)")
+        bed_counts_pie = df_filtered['bedrooms'].value_counts().sort_index().reset_index()
+        bed_counts_pie.columns = ['Bedrooms', 'Count']
+        bed_counts_pie['Bedrooms'] = bed_counts_pie['Bedrooms'].astype(int).astype(str) + ' Bed'
+        fig11b = px.pie(bed_counts_pie, names='Bedrooms', values='Count',
+                        color_discrete_sequence=px.colors.qualitative.Pastel1)
+        fig11b.update_traces(textinfo='label+percent', textposition='outside')
+        fig11b.update_layout(height=450)
+        st.plotly_chart(fig11b, use_container_width=True, config=static_config)
 
         # Chart 12: state vs square_feet (Top 10) — Horizontal Bar (Median)
         with col_f:
