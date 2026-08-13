@@ -222,23 +222,23 @@ bath_range = st.sidebar.slider(
 pet_options = ["All", "Pet-Friendly Only", "No Pets Only"]
 selected_pet = st.sidebar.radio("Pet Policy", pet_options, index=0)
 
-# Amenities count range
-amen_min = int(df_explore['amenities_count'].min())
-amen_max = int(df_explore['amenities_count'].max())
-amen_range = st.sidebar.slider(
-    "Amenities Count Range", min_value=amen_min, max_value=amen_max,
-    value=(amen_min, amen_max), step=1
+# Amenities selection filter
+all_amenity_options = ["Gym", "Pool", "Parking", "Washer/Dryer", "AC", "Balcony", "Dishwasher", "Patio/Deck", "Storage"]
+selected_amenities = st.sidebar.multiselect(
+    "Select Amenities",
+    all_amenity_options,
+    default=[],
+    help="Select required amenities. Apartments with at least this many amenities will be included."
 )
 
-# Apply filters (without price filter)
+# Apply filters
 mask = (
     (df_explore['state'].isin(selected_states)) &
     (df_explore['bedrooms'] >= bed_range[0]) &
     (df_explore['bedrooms'] <= bed_range[1]) &
     (df_explore['bathrooms'] >= bath_range[0]) &
     (df_explore['bathrooms'] <= bath_range[1]) &
-    (df_explore['amenities_count'] >= amen_range[0]) &
-    (df_explore['amenities_count'] <= amen_range[1])
+    (df_explore['amenities_count'] >= len(selected_amenities))
 )
 if selected_pet == "Pet-Friendly Only":
     mask = mask & (df_explore['pets_allowed_bin'] == 1)
@@ -321,7 +321,7 @@ with tab1:
         q99_price = df_price_hist['price'].quantile(0.99)
         df_price_hist = df_price_hist[df_price_hist['price'] <= q99_price]
         fig1 = make_kde_histogram(df_price_hist, 'price', 'Distribution of Apartment Prices', 'Price ($)', 'Frequency')
-        st.plotly_chart(fig1, use_container_width=True, config=static_config)
+        st.plotly_chart(fig1, use_container_width=True, config=static_config, key="chart_1")
 
         # Chart 2: Bar Chart — state vs. price_cleaned (Top 10)
         st.markdown("##### Chart 2 · Bar Chart of Average Apartment Price by State (Top 10)")
@@ -333,14 +333,14 @@ with tab1:
                       labels={'price': 'Average Price ($)', 'state': 'State'},
                       color='price', color_continuous_scale='Viridis')
         fig2.update_layout(height=450, xaxis_tickangle=-45)
-        st.plotly_chart(fig2, use_container_width=True, config=static_config)
+        st.plotly_chart(fig2, use_container_width=True, config=static_config, key="chart_2")
 
         # Chart 3: Histogram with KDE — lat_lon_diff
         st.markdown("##### Chart 3 · Distribution of Latitude-Longitude Difference (Histogram with KDE)")
         df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
         fig3 = make_kde_histogram(df_latlon, 'lat_lon_diff', 'Distribution of Latitude-Longitude Difference',
                                   'Latitude − Longitude Difference', 'Number of Apartments', color='#87CEEB')
-        st.plotly_chart(fig3, use_container_width=True, config=static_config)
+        st.plotly_chart(fig3, use_container_width=True, config=static_config, key="chart_3")
 
         col_loc_a, col_loc_b = st.columns(2)
 
@@ -353,7 +353,7 @@ with tab1:
                            labels={'City': 'City Name', 'Count': 'Number of Apartments'},
                            color_discrete_sequence=['purple'])
             fig4.update_layout(height=420, xaxis_tickangle=-45)
-            st.plotly_chart(fig4, use_container_width=True, config=static_config)
+            st.plotly_chart(fig4, use_container_width=True, config=static_config, key="chart_4")
 
         # Chart 10: Horizontal Bar Chart — state vs. square_feet
         with col_loc_b:
@@ -364,7 +364,7 @@ with tab1:
                            labels={'square_feet': 'Median Sq Ft', 'state': 'State'},
                            color='square_feet', color_continuous_scale='Peach')
             fig10.update_layout(height=420, yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig10, use_container_width=True, config=static_config)
+            st.plotly_chart(fig10, use_container_width=True, config=static_config, key="chart_10")
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 2 — Single Feature vs Price Drivers
@@ -382,7 +382,7 @@ with tab1:
                             labels={'price': 'Rental Price ($)', 'count': 'Count'},
                             color_discrete_sequence=['#EF553B', '#00CC96'])
         fig6.update_layout(height=450, xaxis_title='Rental Price ($)', yaxis_title='Count')
-        st.plotly_chart(fig6, use_container_width=True, config=static_config)
+        st.plotly_chart(fig6, use_container_width=True, config=static_config, key="chart_6")
 
         col_f1, col_f2 = st.columns(2)
 
@@ -395,7 +395,7 @@ with tab1:
                              labels={'bedrooms_str': 'Bedrooms', 'price': 'Price ($)'},
                              color_discrete_sequence=['#636EFA'])
             fig7.update_layout(height=420)
-            st.plotly_chart(fig7, use_container_width=True, config=static_config)
+            st.plotly_chart(fig7, use_container_width=True, config=static_config, key="chart_7")
 
         # Chart 8: Box Plot — bathrooms vs. price
         with col_f2:
@@ -404,7 +404,7 @@ with tab1:
                           labels={'price': 'Price ($)', 'bathrooms': 'Bathrooms'},
                           color_discrete_sequence=['#EF553B'])
             fig8.update_layout(height=420)
-            st.plotly_chart(fig8, use_container_width=True, config=static_config)
+            st.plotly_chart(fig8, use_container_width=True, config=static_config, key="chart_8")
 
         col_f3, col_f4 = st.columns(2)
 
@@ -420,7 +420,7 @@ with tab1:
                            labels={'price': 'Avg Rent ($)', 'sqft_tier': 'Size Tier'},
                            color_discrete_sequence=['#00CC96'])
             fig9.update_layout(height=420)
-            st.plotly_chart(fig9, use_container_width=True, config=static_config)
+            st.plotly_chart(fig9, use_container_width=True, config=static_config, key="chart_9")
 
         # Chart 11: Donut Chart — pets_allowed_bin
         with col_f4:
@@ -435,7 +435,7 @@ with tab1:
                 textinfo='label+percent', textposition='outside'
             )])
             fig11.update_layout(height=420, showlegend=True)
-            st.plotly_chart(fig11, use_container_width=True, config=static_config)
+            st.plotly_chart(fig11, use_container_width=True, config=static_config, key="chart_11")
 
         # Chart 12: Line Graph (with Markers) — amenities_count vs. price
         st.markdown("##### Chart 12 · Amenities Count vs Average Rent (Line Graph)")
@@ -444,7 +444,7 @@ with tab1:
                         labels={'amenities_count': 'Amenities Count', 'price': 'Average Price ($)'},
                         color_discrete_sequence=['#FFA15A'])
         fig12.update_layout(height=420)
-        st.plotly_chart(fig12, use_container_width=True, config=static_config)
+        st.plotly_chart(fig12, use_container_width=True, config=static_config, key="chart_12")
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 3 — Physical Layout & Floorplan
@@ -464,7 +464,7 @@ with tab1:
                               color_discrete_sequence=px.colors.qualitative.Pastel1)
             fig5_pie.update_traces(textinfo='label+percent', textposition='outside')
             fig5_pie.update_layout(height=420)
-            st.plotly_chart(fig5_pie, use_container_width=True, config=static_config)
+            st.plotly_chart(fig5_pie, use_container_width=True, config=static_config, key="chart_5")
 
         # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
         with col_l2:
@@ -475,7 +475,7 @@ with tab1:
                             labels={'City': 'City Name', 'Count': 'Number of Apartments'},
                             color_discrete_sequence=['#AB63FA'])
             fig13.update_layout(height=420, xaxis_tickangle=-45)
-            st.plotly_chart(fig13, use_container_width=True, config=static_config)
+            st.plotly_chart(fig13, use_container_width=True, config=static_config, key="chart_13")
 
         # Chart 14: 2D Matrix Heatmap — bedrooms × bathrooms vs. price
         st.markdown("##### Chart 14 · Bedrooms × Bathrooms → Average Rent (2D Matrix Heatmap)")
@@ -485,7 +485,7 @@ with tab1:
                           color_continuous_scale='RdYlGn',
                           labels={'x': 'Bedrooms', 'y': 'Bathrooms', 'color': 'Avg Rent ($)'})
         fig14.update_layout(height=450)
-        st.plotly_chart(fig14, use_container_width=True, config=static_config)
+        st.plotly_chart(fig14, use_container_width=True, config=static_config, key="chart_14")
 
         # Chart 15: 2D Pivot Heatmap — square_feet (binned) × bedrooms
         st.markdown("##### Chart 15 · Square Feet Tier × Bedrooms (2D Pivot Heatmap)")
@@ -499,7 +499,7 @@ with tab1:
                           color_continuous_scale='YlGnBu',
                           labels={'x': 'Bedrooms', 'y': 'Square Feet Tier', 'color': 'Median Sq Ft'})
         fig15.update_layout(height=450)
-        st.plotly_chart(fig15, use_container_width=True, config=static_config)
+        st.plotly_chart(fig15, use_container_width=True, config=static_config, key="chart_15")
 
         col_l3, col_l4 = st.columns(2)
 
@@ -516,7 +516,7 @@ with tab1:
                            color_discrete_sequence=px.colors.qualitative.Set2)
             fig16.update_traces(textinfo='label+percent', textposition='outside')
             fig16.update_layout(height=420)
-            st.plotly_chart(fig16, use_container_width=True, config=static_config)
+            st.plotly_chart(fig16, use_container_width=True, config=static_config, key="chart_16")
 
         # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
         with col_l4:
@@ -554,7 +554,7 @@ with tab1:
                 height=420,
                 polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
             )
-            st.plotly_chart(fig17, use_container_width=True, config=static_config)
+            st.plotly_chart(fig17, use_container_width=True, config=static_config, key="chart_17")
 
 
 # ═══════════════════════════════════════════════
@@ -584,7 +584,7 @@ with tab2:
                        text_auto='.2f',
                        color_discrete_sequence=['#636EFA', '#EF553B', '#00CC96'])
     fig_multi.update_layout(height=450, yaxis_title="Score / Error")
-    st.plotly_chart(fig_multi, use_container_width=True, config=static_config)
+    st.plotly_chart(fig_multi, use_container_width=True, config=static_config, key="chart_tab2_multi")
 
     st.divider()
 
@@ -631,7 +631,7 @@ with tab2:
                                 mode='lines', name='Perfect Prediction',
                                 line=dict(color='red', dash='dash')))
     fig_ap.update_layout(height=500)
-    st.plotly_chart(fig_ap, use_container_width=True, config=static_config)
+    st.plotly_chart(fig_ap, use_container_width=True, config=static_config, key="chart_tab2_scatter")
 
     # Class‑level metrics table
     st.markdown("#### Class‑Level Metrics (per Price Quartile)")
@@ -657,7 +657,7 @@ with tab2:
                        color_continuous_scale='Blues',
                        labels={'x': 'Predicted Quartile', 'y': 'Actual Quartile', 'color': 'Count'})
     fig_cm.update_layout(height=500)
-    st.plotly_chart(fig_cm, use_container_width=True, config=static_config)
+    st.plotly_chart(fig_cm, use_container_width=True, config=static_config, key="chart_tab2_cm")
 
 
 # ═══════════════════════════════════════════════
@@ -770,4 +770,4 @@ with tab4:
                           color_discrete_sequence=px.colors.qualitative.Set2)
         fig_pred.update_traces(textposition='outside')
         fig_pred.update_layout(height=420, yaxis_title="Estimated Rent ($)")
-        st.plotly_chart(fig_pred, use_container_width=True, config=static_config)
+        st.plotly_chart(fig_pred, use_container_width=True, config=static_config, key="chart_tab4_pred")
