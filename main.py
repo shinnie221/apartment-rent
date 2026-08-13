@@ -130,7 +130,7 @@ if df_raw.empty:
 # ──────────────────────────────────────────────
 #  SIDEBAR – MODEL HYPERPARAMETERS
 # ──────────────────────────────────────────────
-st.sidebar.header("🧠 Model Hyperparameters")
+st.sidebar.header("Model Hyperparameters")
 st.sidebar.caption("Adjust parameters below and models will retrain automatically.")
 
 # KNN
@@ -196,7 +196,7 @@ df_explore['lat_lon_diff'] = df_explore['latitude'] - df_explore['longitude']
 # ──────────────────────────────────────────────
 #  SIDEBAR – GLOBAL FILTERS
 # ──────────────────────────────────────────────
-st.sidebar.header("🔍 Filters")
+st.sidebar.header("Filters")
 
 # State filter
 all_states = sorted(df_explore['state'].dropna().unique().tolist())
@@ -252,7 +252,7 @@ st.sidebar.markdown(f"**Showing {len(df_filtered):,} / {len(df_explore):,} apart
 # ──────────────────────────────────────────────
 #  TITLE & TABS
 # ──────────────────────────────────────────────
-st.title("🏢 Apartment Rental Price Prediction & Valuation System")
+st.title("Apartment Rental Price Prediction & Valuation System")
 
 tab1, tab2, tab3, tab4 = st.tabs([
     "Visualisation Dashboard",
@@ -316,7 +316,7 @@ with tab1:
         st.subheader("Location & Geographic Drivers")
 
         # Chart 1: Histogram with KDE — price_cleaned
-        st.markdown("##### Chart 1 · Distribution of Apartment Prices (Histogram with KDE)")
+        st.markdown("##### Distribution of Apartment Prices (Histogram with KDE)")
         df_price_hist = df_filtered.dropna(subset=['price']).copy()
         q99_price = df_price_hist['price'].quantile(0.99)
         df_price_hist = df_price_hist[df_price_hist['price'] <= q99_price]
@@ -324,7 +324,7 @@ with tab1:
         st.plotly_chart(fig1, use_container_width=True, config=static_config, key="chart_1")
 
         # Chart 2: Bar Chart — state vs. price_cleaned (Top 10)
-        st.markdown("##### Chart 2 · Bar Chart of Average Apartment Price by State (Top 10)")
+        st.markdown("##### Bar Chart of Average Apartment Price by State (Top 10)")
         state_counts = df_filtered['state'].value_counts()
         top_10_states = state_counts.head(10).index.tolist()
         df_top10 = df_filtered[df_filtered['state'].isin(top_10_states)]
@@ -336,7 +336,7 @@ with tab1:
         st.plotly_chart(fig2, use_container_width=True, config=static_config, key="chart_2")
 
         # Chart 3: Histogram with KDE — lat_lon_diff
-        st.markdown("##### Chart 3 · Distribution of Latitude-Longitude Difference (Histogram with KDE)")
+        st.markdown("##### Distribution of Latitude-Longitude Difference (Histogram with KDE)")
         df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
         fig3 = make_kde_histogram(df_latlon, 'lat_lon_diff', 'Distribution of Latitude-Longitude Difference',
                                   'Latitude − Longitude Difference', 'Number of Apartments', color='#87CEEB')
@@ -346,7 +346,7 @@ with tab1:
 
         # Chart 4: Line Chart (with Markers) — cityname vs. apartment_count
         with col_loc_a:
-            st.markdown("##### Chart 4 · Top 10 Cities by Number of Apartments (Line)")
+            st.markdown("##### Top 10 Cities by Number of Apartments (Line)")
             top_cities = df_filtered['cityname'].value_counts().head(10).reset_index()
             top_cities.columns = ['City', 'Count']
             fig4 = px.line(top_cities, x='City', y='Count', markers=True,
@@ -357,7 +357,7 @@ with tab1:
 
         # Chart 10: Horizontal Bar Chart — state vs. square_feet
         with col_loc_b:
-            st.markdown("##### Chart 10 · Top 10 States by Median Apartment Size (Horizontal Bar)")
+            st.markdown("##### Top 10 States by Median Apartment Size (Horizontal Bar)")
             agg10 = df_filtered.groupby('state', as_index=False)['square_feet'].median() \
                 .nlargest(10, 'square_feet').sort_values('square_feet', ascending=True)
             fig10 = px.bar(agg10, y='state', x='square_feet', orientation='h',
@@ -373,7 +373,7 @@ with tab1:
         st.subheader("Single Feature vs Price Drivers")
 
         # Chart 6: Multi-Bar Histogram (Grouped/Dodge) — pets_allowed × price
-        st.markdown("##### Chart 6 · Distribution of Rental Price by Pets Allowed Category (Grouped Histogram)")
+        st.markdown("##### Distribution of Rental Price by Pets Allowed Category (Grouped Histogram)")
         df_p6 = df_filtered.dropna(subset=['price']).copy()
         q99_p6 = df_p6['price'].quantile(0.99)
         df_p6 = df_p6[df_p6['price'] <= q99_p6].copy()
@@ -388,7 +388,7 @@ with tab1:
 
         # Chart 7: Violin Plot — bedrooms vs. price
         with col_f1:
-            st.markdown("##### Chart 7 · Bedrooms vs Price (Violin Plot)")
+            st.markdown("##### Bedrooms vs Price (Violin Plot)")
             df_v7 = df_filtered[df_filtered['bedrooms'] > 0].copy()
             df_v7['bedrooms_str'] = df_v7['bedrooms'].astype(int).astype(str) + ' Bed'
             fig7 = px.violin(df_v7, x='bedrooms_str', y='price', box=True,
@@ -399,7 +399,7 @@ with tab1:
 
         # Chart 8: Box Plot — bathrooms vs. price
         with col_f2:
-            st.markdown("##### Chart 8 · Bathrooms vs Price Distribution (Box Plot)")
+            st.markdown("##### Bathrooms vs Price Distribution (Box Plot)")
             fig8 = px.box(df_filtered, x='bathrooms', y='price',
                           labels={'price': 'Price ($)', 'bathrooms': 'Bathrooms'},
                           color_discrete_sequence=['#EF553B'])
@@ -410,7 +410,7 @@ with tab1:
 
         # Chart 9: Area Graph — square_feet (binned) vs. price
         with col_f3:
-            st.markdown("##### Chart 9 · Size Tiers vs Average Rent (Area Graph)")
+            st.markdown("##### Size Tiers vs Average Rent (Area Graph)")
             df_bin9 = df_filtered.dropna(subset=['square_feet']).copy()
             df_bin9['sqft_tier'] = pd.cut(df_bin9['square_feet'],
                                           bins=[0, 500, 800, 1200, 1800, 100000],
@@ -424,7 +424,7 @@ with tab1:
 
         # Chart 11: Donut Chart — pets_allowed_bin
         with col_f4:
-            st.markdown("##### Chart 11 · Pet Policy Market Split (Donut Chart)")
+            st.markdown("##### Pet Policy Market Split (Donut Chart)")
             df_pets11 = df_filtered.copy()
             df_pets11['Pet Policy'] = df_pets11['pets_allowed_bin'].map({0: 'No Pets', 1: 'Pet-Friendly'})
             agg11 = df_pets11['Pet Policy'].value_counts().reset_index()
@@ -438,7 +438,7 @@ with tab1:
             st.plotly_chart(fig11, use_container_width=True, config=static_config, key="chart_11")
 
         # Chart 12: Line Graph (with Markers) — amenities_count vs. price
-        st.markdown("##### Chart 12 · Amenities Count vs Average Rent (Line Graph)")
+        st.markdown("##### Amenities Count vs Average Rent (Line Graph)")
         agg12 = df_filtered.groupby('amenities_count', as_index=False)['price'].mean().sort_values('amenities_count')
         fig12 = px.line(agg12, x='amenities_count', y='price', markers=True,
                         labels={'amenities_count': 'Amenities Count', 'price': 'Average Price ($)'},
@@ -456,7 +456,7 @@ with tab1:
 
         # Chart 5: Pie Chart — bedrooms
         with col_l1:
-            st.markdown("##### Chart 5 · Bedrooms Distribution (Pie Chart)")
+            st.markdown("##### Bedrooms Distribution (Pie Chart)")
             bed_counts5 = df_filtered['bedrooms'].value_counts().sort_index().reset_index()
             bed_counts5.columns = ['Bedrooms', 'Count']
             bed_counts5['Bedrooms'] = bed_counts5['Bedrooms'].astype(int).astype(str) + ' Bed'
@@ -468,7 +468,7 @@ with tab1:
 
         # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
         with col_l2:
-            st.markdown("##### Chart 13 · Top 10 Cities by Number of Apartments (Line Graph)")
+            st.markdown("##### Top 10 Cities by Number of Apartments (Line Graph)")
             top_cities13 = df_filtered['cityname'].value_counts().head(10).reset_index()
             top_cities13.columns = ['City', 'Count']
             fig13 = px.line(top_cities13, x='City', y='Count', markers=True,
@@ -481,7 +481,7 @@ with tab1:
 
         # Chart 16: Pie Chart — bedrooms (Market Share Split)
         with col_l3:
-            st.markdown("##### Chart 16 · Bedroom Count Market Share (Pie Chart)")
+            st.markdown("##### Bedroom Count Market Share (Pie Chart)")
             df_bed16 = df_filtered.copy()
             df_bed16['Bedrooms'] = df_bed16['bedrooms'].apply(
                 lambda x: f"{int(x)} Bed" if x < 4 else "4+ Bed"
@@ -496,7 +496,7 @@ with tab1:
 
         # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
         with col_l4:
-            st.markdown("##### Chart 17 · Multi-Attribute Profile by Bedrooms (Radar Chart)")
+            st.markdown("##### Multi-Attribute Profile by Bedrooms (Radar Chart)")
             bed_vals = sorted(df_filtered['bedrooms'].dropna().unique())
             bed_vals = [b for b in bed_vals if b > 0][:5]
             radar_attrs = ['price', 'square_feet', 'bathrooms', 'amenities_count']
@@ -537,7 +537,7 @@ with tab1:
 #  TAB 2 — MODEL COMPARISON
 # ═══════════════════════════════════════════════
 with tab2:
-    st.header("🤖 Model Comparison")
+    st.header("Model Comparison")
 
     # ── 2a. Regression Metrics Summary Table ──────────────────
     st.subheader("Regression Metrics Summary")
@@ -586,7 +586,7 @@ with tab2:
     st.divider()
 
     # ── 2d. Inspect Individual Model ─────────────────────────
-    st.subheader("🔎 Inspect Individual Model")
+    st.subheader("Inspect Individual Model")
     model_choice = st.selectbox("Select a model to inspect", list(models_dict.keys()))
 
     info = models_dict[model_choice]
@@ -640,7 +640,7 @@ with tab2:
 #  TAB 3 — DATA EXPLORER
 # ═══════════════════════════════════════════════
 with tab3:
-    st.header("📋 Data Explorer")
+    st.header("Data Explorer")
 
     # KPI cards
     feature_cols_display = ['bedrooms', 'bathrooms', 'square_feet', 'amenities_count', 'pets_allowed_bin', 'state']
@@ -651,10 +651,10 @@ with tab3:
     q_labels_full = _make_labels(np.unique(q_edges_full))
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("📦 Total Records", f"{len(df_explore):,}")
-    c2.metric("🧮 Input Features", num_features)
-    c3.metric("🏷️ Price Classes (Quartiles)", len(q_labels_full))
-    c4.metric("🎯 Target Variable", "price")
+    c1.metric("Total Records", f"{len(df_explore):,}")
+    c2.metric("Input Features", num_features)
+    c3.metric("Price Classes (Quartiles)", len(q_labels_full))
+    c4.metric("Target Variable", "price")
 
     st.divider()
 
@@ -689,7 +689,7 @@ with tab3:
 #  TAB 4 — PRICE PREDICTOR
 # ═══════════════════════════════════════════════
 with tab4:
-    st.header("🏠 Price Predictor")
+    st.header("Price Predictor")
     st.markdown("Enter apartment features and select a model to predict the estimated monthly rent.")
 
     # Input form
@@ -712,7 +712,7 @@ with tab4:
     pred_model_name = st.selectbox("Choose Prediction Model",
                                     list(models_dict.keys()), key='pred_model')
 
-    if st.button("🔮 Predict Rent", type="primary", use_container_width=True):
+    if st.button("Predict Rent", type="primary", use_container_width=True):
         input_data = {
             'bedrooms': pred_beds,
             'bathrooms': pred_baths,
@@ -726,4 +726,4 @@ with tab4:
         sel_info = models_dict[pred_model_name]
         sel_pred = sel_info['predict_fn'](sel_info['model'], sel_info['scaler'], sel_info['features'], input_data)
 
-        st.success(f"### 🏷️ Estimated Monthly Rent ({pred_model_name}): **${sel_pred:,.2f}**")
+        st.success(f"### Estimated Monthly Rent ({pred_model_name}): **${sel_pred:,.2f}**")
