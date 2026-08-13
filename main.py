@@ -198,14 +198,6 @@ df_explore['lat_lon_diff'] = df_explore['latitude'] - df_explore['longitude']
 # ──────────────────────────────────────────────
 st.sidebar.header("🔍 Filters")
 
-# Price range
-price_min = int(df_explore['price'].min())
-price_max = int(df_explore['price'].max())
-price_range = st.sidebar.slider(
-    "Price Range ($)", min_value=price_min, max_value=price_max,
-    value=(price_min, price_max), step=50
-)
-
 # State filter
 all_states = sorted(df_explore['state'].dropna().unique().tolist())
 selected_states = st.sidebar.multiselect("Filter by State", all_states, default=all_states)
@@ -218,14 +210,42 @@ bed_range = st.sidebar.slider(
     value=(bed_min, bed_max), step=1
 )
 
-# Apply filters
-df_filtered = df_explore[
-    (df_explore['price'] >= price_range[0]) &
-    (df_explore['price'] <= price_range[1]) &
+# Bathrooms range
+bath_min = float(df_explore['bathrooms'].min())
+bath_max = float(df_explore['bathrooms'].max())
+bath_range = st.sidebar.slider(
+    "Bathrooms Range", min_value=bath_min, max_value=bath_max,
+    value=(bath_min, bath_max), step=0.5
+)
+
+# Pet Allowed filter
+pet_options = ["All", "Pet-Friendly Only", "No Pets Only"]
+selected_pet = st.sidebar.radio("Pet Policy", pet_options, index=0)
+
+# Amenities count range
+amen_min = int(df_explore['amenities_count'].min())
+amen_max = int(df_explore['amenities_count'].max())
+amen_range = st.sidebar.slider(
+    "Amenities Count Range", min_value=amen_min, max_value=amen_max,
+    value=(amen_min, amen_max), step=1
+)
+
+# Apply filters (without price filter)
+mask = (
     (df_explore['state'].isin(selected_states)) &
     (df_explore['bedrooms'] >= bed_range[0]) &
-    (df_explore['bedrooms'] <= bed_range[1])
-].copy()
+    (df_explore['bedrooms'] <= bed_range[1]) &
+    (df_explore['bathrooms'] >= bath_range[0]) &
+    (df_explore['bathrooms'] <= bath_range[1]) &
+    (df_explore['amenities_count'] >= amen_range[0]) &
+    (df_explore['amenities_count'] <= amen_range[1])
+)
+if selected_pet == "Pet-Friendly Only":
+    mask = mask & (df_explore['pets_allowed_bin'] == 1)
+elif selected_pet == "No Pets Only":
+    mask = mask & (df_explore['pets_allowed_bin'] == 0)
+
+df_filtered = df_explore[mask].copy()
 
 st.sidebar.markdown(f"**Showing {len(df_filtered):,} / {len(df_explore):,} apartments**")
 
