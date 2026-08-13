@@ -218,14 +218,44 @@ bed_range = st.sidebar.slider(
     value=(bed_min, bed_max), step=1
 )
 
+# Bathrooms range
+bath_min = float(df_explore['bathrooms'].min())
+bath_max = float(df_explore['bathrooms'].max())
+bath_range = st.sidebar.slider(
+    "Bathrooms Range", min_value=bath_min, max_value=bath_max,
+    value=(bath_min, bath_max), step=0.5
+)
+
+# Pet Allowed filter
+pet_options = ["All", "Pet-Friendly Only", "No Pets Only"]
+selected_pet = st.sidebar.radio("Pet Policy", pet_options, index=0)
+
+# Amenities count range
+amen_min = int(df_explore['amenities_count'].min())
+amen_max = int(df_explore['amenities_count'].max())
+amen_range = st.sidebar.slider(
+    "Amenities Count Range", min_value=amen_min, max_value=amen_max,
+    value=(amen_min, amen_max), step=1
+)
+
 # Apply filters
-df_filtered = df_explore[
+mask = (
     (df_explore['price'] >= price_range[0]) &
     (df_explore['price'] <= price_range[1]) &
     (df_explore['state'].isin(selected_states)) &
     (df_explore['bedrooms'] >= bed_range[0]) &
-    (df_explore['bedrooms'] <= bed_range[1])
-].copy()
+    (df_explore['bedrooms'] <= bed_range[1]) &
+    (df_explore['bathrooms'] >= bath_range[0]) &
+    (df_explore['bathrooms'] <= bath_range[1]) &
+    (df_explore['amenities_count'] >= amen_range[0]) &
+    (df_explore['amenities_count'] <= amen_range[1])
+)
+if selected_pet == "Pet-Friendly Only":
+    mask = mask & (df_explore['pets_allowed_bin'] == 1)
+elif selected_pet == "No Pets Only":
+    mask = mask & (df_explore['pets_allowed_bin'] == 0)
+
+df_filtered = df_explore[mask].copy()
 
 st.sidebar.markdown(f"**Showing {len(df_filtered):,} / {len(df_explore):,} apartments**")
 
