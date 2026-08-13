@@ -266,7 +266,7 @@ static_config = {'staticPlot': True, 'displayModeBar': False}
 
 
 # ═══════════════════════════════════════════════
-#  TAB 1 — VISUALISATION DASHBOARD (15 charts)
+#  TAB 1 — VISUALISATION DASHBOARD (17 charts)
 #  Organised into 3 sub‑tabs
 # ═══════════════════════════════════════════════
 with tab1:
@@ -279,45 +279,92 @@ with tab1:
         "Physical Layout & Floorplan",
     ])
 
+    # Helper function for Plotly Histogram + KDE curve
+    def make_kde_histogram(df, col, title, x_label, y_label='Frequency', nbins=50, color='#87CEEB'):
+        data = df[col].dropna()
+        if len(data) == 0:
+            return go.Figure()
+
+        fig = px.histogram(data, x=col, nbins=nbins,
+                           labels={col: x_label, 'count': y_label},
+                           color_discrete_sequence=[color])
+
+        try:
+            from scipy.stats import gaussian_kde
+            kde = gaussian_kde(data)
+            x_range = np.linspace(data.min(), data.max(), 200)
+            kde_values = kde(x_range)
+            bin_width = (data.max() - data.min()) / nbins
+            kde_scaled = kde_values * len(data) * bin_width
+
+            fig.add_trace(go.Scatter(
+                x=x_range, y=kde_scaled,
+                mode='lines',
+                name='KDE',
+                line=dict(color='#1f77b4', width=2.5)
+            ))
+        except Exception:
+            pass
+
+        fig.update_layout(height=450, xaxis_title=x_label, yaxis_title=y_label, showlegend=False)
+        return fig
+
     # ═════════════════════════════════════════════
     #  SUB‑TAB 1 — Location & Geographic Drivers
     # ═════════════════════════════════════════════
     with subtab_loc:
         st.subheader("Location & Geographic Drivers")
 
-        # Chart 1: Distribution of Apartment Prices — Histogram
-        st.markdown("##### Chart 1 · Distribution of Apartment Prices")
+        # Chart 1: Histogram with KDE — price_cleaned
+        st.markdown("##### Chart 1 · Distribution of Apartment Prices (Histogram with KDE)")
         df_price_hist = df_filtered.dropna(subset=['price']).copy()
         q99_price = df_price_hist['price'].quantile(0.99)
         df_price_hist = df_price_hist[df_price_hist['price'] <= q99_price]
-        fig3b = px.histplot(df_price_hist, x='price', nbins=50,
-                             labels={'price': 'Price ($)', 'count': 'Frequency'},
-                             color_discrete_sequence=['#87CEEB'])
-        fig3b.update_layout(height=450, xaxis_title='Price ($)', yaxis_title='Frequency')
-        st.plotly_chart(fig3b, use_container_width=True, config=static_config)
+        fig1 = make_kde_histogram(df_price_hist, 'price', 'Distribution of Apartment Prices', 'Price ($)', 'Frequency')
+        st.plotly_chart(fig1, use_container_width=True, config=static_config)
 
-        # Chart 2: Average Apartment Price by State (Top 10 by listing count)
-        st.markdown("##### Chart 2 · Average Price by State (Top 10 by Listing Count)")
+        # Chart 2: Bar Chart — state vs. price_cleaned (Top 10)
+        st.markdown("##### Chart 2 · Bar Chart of Average Apartment Price by State (Top 10)")
         state_counts = df_filtered['state'].value_counts()
-        top_10_states_by_count = state_counts.head(10).index.tolist()
-        df_top10_listing = df_filtered[df_filtered['state'].isin(top_10_states_by_count)]
-        avg_price_by_state = df_top10_listing.groupby('state', as_index=False)['price'].mean() \
-            .sort_values('price', ascending=False)
-        fig3c = px.bar(avg_price_by_state, x='state', y='price',
-                       labels={'price': 'Average Price ($)', 'state': 'State'},
-                       color='price', color_continuous_scale='Viridis')
-        fig3c.update_layout(height=500, xaxis_tickangle=-45)
-        st.plotly_chart(fig3c, use_container_width=True, config=static_config)
+        top_10_states = state_counts.head(10).index.tolist()
+        df_top10 = df_filtered[df_filtered['state'].isin(top_10_states)]
+        avg_price_state = df_top10.groupby('state', as_index=False)['price'].mean().sort_values('price', ascending=False)
+        fig2 = px.bar(avg_price_state, x='state', y='price',
+                      labels={'price': 'Average Price ($)', 'state': 'State'},
+                      color='price', color_continuous_scale='Viridis')
+        fig2.update_layout(height=450, xaxis_tickangle=-45)
+        st.plotly_chart(fig2, use_container_width=True, config=static_config)
 
-        # Chart 3D: Distribution of Latitude-Longitude Difference — Histogram
-        st.markdown("##### Chart 3 · Distribution of Latitude–Longitude Difference")
+        # Chart 3: Histogram with KDE — lat_lon_diff
+        st.markdown("##### Chart 3 · Distribution of Latitude-Longitude Difference (Histogram with KDE)")
         df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
-        fig3d = px.histogram(df_latlon, x='lat_lon_diff', nbins=50,
-                             labels={'lat_lon_diff': 'Latitude − Longitude Difference', 'count': 'Number of Apartments'},
-                             color_discrete_sequence=['#87CEEB'])
-        fig3d.update_layout(height=450, xaxis_title='Latitude − Longitude Difference',
-                            yaxis_title='Number of Apartments')
-        st.plotly_chart(fig3d, use_container_width=True, config=static_config)
+        fig3 = make_kde_histogram(df_latlon, 'lat_lon_diff', 'Distribution of Latitude-Longitude Difference',
+                                  'Latitude − Longitude Difference', 'Number of Apartments', color='#87CEEB')
+        st.plotly_chart(fig3, use_container_width=True, config=static_config)
+
+        col_loc_a, col_loc_b = st.columns(2)
+
+        # Chart 4: Line Chart (with Markers) — cityname vs. apartment_count
+        with col_loc_a:
+            st.markdown("##### Chart 4 · Top 10 Cities by Number of Apartments (Line)")
+            top_cities = df_filtered['cityname'].value_counts().head(10).reset_index()
+            top_cities.columns = ['City', 'Count']
+            fig4 = px.line(top_cities, x='City', y='Count', markers=True,
+                           labels={'City': 'City Name', 'Count': 'Number of Apartments'},
+                           color_discrete_sequence=['purple'])
+            fig4.update_layout(height=420, xaxis_tickangle=-45)
+            st.plotly_chart(fig4, use_container_width=True, config=static_config)
+
+        # Chart 10: Horizontal Bar Chart — state vs. square_feet
+        with col_loc_b:
+            st.markdown("##### Chart 10 · Top 10 States by Median Apartment Size (Horizontal Bar)")
+            agg10 = df_filtered.groupby('state', as_index=False)['square_feet'].median() \
+                .nlargest(10, 'square_feet').sort_values('square_feet', ascending=True)
+            fig10 = px.bar(agg10, y='state', x='square_feet', orientation='h',
+                           labels={'square_feet': 'Median Sq Ft', 'state': 'State'},
+                           color='square_feet', color_continuous_scale='Peach')
+            fig10.update_layout(height=420, yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig10, use_container_width=True, config=static_config)
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 2 — Single Feature vs Price Drivers
@@ -325,189 +372,163 @@ with tab1:
     with subtab_feat:
         st.subheader("Single Feature vs Price Drivers")
 
-        col_a, col_b = st.columns(2)
-
-        # Chart 4: bedrooms vs price — Violin Plot
-        with col_a:
-            st.markdown("##### Chart 4 · Bedrooms vs Price (Violin)")
-            df_v4 = df_filtered[df_filtered['bedrooms'] > 0].copy()
-            df_v4['bedrooms_str'] = df_v4['bedrooms'].astype(int).astype(str)
-            fig4 = px.violin(df_v4, x='bedrooms_str', y='price', box=True,
-                             labels={'bedrooms_str': 'Bedrooms', 'price': 'Price ($)'},
-                             color_discrete_sequence=['#636EFA'])
-            fig4.update_layout(height=450)
-            st.plotly_chart(fig4, use_container_width=True, config=static_config)
-
-        # Chart 5: bathrooms vs price — Box Plot
-        with col_b:
-            st.markdown("##### Chart 5 · Bathrooms vs Price Distribution (Box)")
-            fig5 = px.box(df_filtered, x='bathrooms', y='price',
-                          labels={'price': 'Price ($)', 'bathrooms': 'Bathrooms'},
-                          color_discrete_sequence=['#EF553B'])
-            fig5.update_layout(height=450)
-            st.plotly_chart(fig5, use_container_width=True, config=static_config)
-
-        # Chart 6: square_feet vs price — Scatter with OLS trendline
-        st.markdown("##### Chart 6 · Square Feet vs Price (Scatter + OLS Trend)")
-        sample6 = df_filtered.dropna(subset=['square_feet', 'price'])
-        if len(sample6) > 5000:
-            sample6 = sample6.sample(5000, random_state=42)
-        fig6 = px.scatter(sample6, x='square_feet', y='price', opacity=0.35,
-                          trendline='ols',
-                          labels={'square_feet': 'Square Feet', 'price': 'Monthly Rent ($)'},
-                          color_discrete_sequence=['#AB63FA'])
-        fig6.update_layout(height=450)
+        # Chart 6: Multi-Bar Histogram (Grouped/Dodge) — pets_allowed × price
+        st.markdown("##### Chart 6 · Distribution of Rental Price by Pets Allowed Category (Grouped Histogram)")
+        df_p6 = df_filtered.dropna(subset=['price']).copy()
+        q99_p6 = df_p6['price'].quantile(0.99)
+        df_p6 = df_p6[df_p6['price'] <= q99_p6].copy()
+        df_p6['Pet Policy'] = df_p6['pets_allowed_bin'].map({0: 'No Pets', 1: 'Pet-Friendly'})
+        fig6 = px.histogram(df_p6, x='price', color='Pet Policy', barmode='group', nbins=50,
+                            labels={'price': 'Rental Price ($)', 'count': 'Count'},
+                            color_discrete_sequence=['#EF553B', '#00CC96'])
+        fig6.update_layout(height=450, xaxis_title='Rental Price ($)', yaxis_title='Count')
         st.plotly_chart(fig6, use_container_width=True, config=static_config)
 
-        col_c, col_d = st.columns(2)
+        col_f1, col_f2 = st.columns(2)
 
-        # Chart 7: square_feet (Binned) vs price — Area Graph
-        with col_c:
-            st.markdown("##### Chart 7 · Size Tiers vs Average Rent (Area)")
-            df_bin7 = df_filtered.dropna(subset=['square_feet']).copy()
-            df_bin7['sqft_tier'] = pd.cut(df_bin7['square_feet'],
-                                          bins=[0, 500, 800, 1200, 1800, 100000],
-                                          labels=['<500', '500–800', '800–1200', '1200–1800', '1800+'])
-            agg7 = df_bin7.groupby('sqft_tier', as_index=False, observed=True)['price'].mean()
-            fig7 = px.area(agg7, x='sqft_tier', y='price',
-                           labels={'price': 'Avg Rent ($)', 'sqft_tier': 'Size Tier'},
-                           color_discrete_sequence=['#00CC96'])
-            fig7.update_layout(height=400)
+        # Chart 7: Violin Plot — bedrooms vs. price
+        with col_f1:
+            st.markdown("##### Chart 7 · Bedrooms vs Price (Violin Plot)")
+            df_v7 = df_filtered[df_filtered['bedrooms'] > 0].copy()
+            df_v7['bedrooms_str'] = df_v7['bedrooms'].astype(int).astype(str) + ' Bed'
+            fig7 = px.violin(df_v7, x='bedrooms_str', y='price', box=True,
+                             labels={'bedrooms_str': 'Bedrooms', 'price': 'Price ($)'},
+                             color_discrete_sequence=['#636EFA'])
+            fig7.update_layout(height=420)
             st.plotly_chart(fig7, use_container_width=True, config=static_config)
 
-        # Chart 8: pets_allowed_bin Market Split — Donut Chart
-        with col_d:
-            st.markdown("##### Chart 8 · Pet Policy Market Split (Donut)")
-            df_pets8 = df_filtered.copy()
-            df_pets8['Pet Policy'] = df_pets8['pets_allowed_bin'].map({0: 'No Pets', 1: 'Pet-Friendly'})
-            agg8 = df_pets8['Pet Policy'].value_counts().reset_index()
-            agg8.columns = ['Pet Policy', 'Count']
-            fig8 = go.Figure(data=[go.Pie(
-                labels=agg8['Pet Policy'], values=agg8['Count'],
+        # Chart 8: Box Plot — bathrooms vs. price
+        with col_f2:
+            st.markdown("##### Chart 8 · Bathrooms vs Price Distribution (Box Plot)")
+            fig8 = px.box(df_filtered, x='bathrooms', y='price',
+                          labels={'price': 'Price ($)', 'bathrooms': 'Bathrooms'},
+                          color_discrete_sequence=['#EF553B'])
+            fig8.update_layout(height=420)
+            st.plotly_chart(fig8, use_container_width=True, config=static_config)
+
+        col_f3, col_f4 = st.columns(2)
+
+        # Chart 9: Area Graph — square_feet (binned) vs. price
+        with col_f3:
+            st.markdown("##### Chart 9 · Size Tiers vs Average Rent (Area Graph)")
+            df_bin9 = df_filtered.dropna(subset=['square_feet']).copy()
+            df_bin9['sqft_tier'] = pd.cut(df_bin9['square_feet'],
+                                          bins=[0, 500, 800, 1200, 1800, 100000],
+                                          labels=['<500', '500–800', '800–1200', '1200–1800', '1800+'])
+            agg9 = df_bin9.groupby('sqft_tier', as_index=False, observed=True)['price'].mean()
+            fig9 = px.area(agg9, x='sqft_tier', y='price',
+                           labels={'price': 'Avg Rent ($)', 'sqft_tier': 'Size Tier'},
+                           color_discrete_sequence=['#00CC96'])
+            fig9.update_layout(height=420)
+            st.plotly_chart(fig9, use_container_width=True, config=static_config)
+
+        # Chart 11: Donut Chart — pets_allowed_bin
+        with col_f4:
+            st.markdown("##### Chart 11 · Pet Policy Market Split (Donut Chart)")
+            df_pets11 = df_filtered.copy()
+            df_pets11['Pet Policy'] = df_pets11['pets_allowed_bin'].map({0: 'No Pets', 1: 'Pet-Friendly'})
+            agg11 = df_pets11['Pet Policy'].value_counts().reset_index()
+            agg11.columns = ['Pet Policy', 'Count']
+            fig11 = go.Figure(data=[go.Pie(
+                labels=agg11['Pet Policy'], values=agg11['Count'],
                 hole=0.5, marker_colors=['#EF553B', '#00CC96'],
                 textinfo='label+percent', textposition='outside'
             )])
-            fig8.update_layout(height=400, showlegend=True)
-            st.plotly_chart(fig8, use_container_width=True, config=static_config)
+            fig11.update_layout(height=420, showlegend=True)
+            st.plotly_chart(fig11, use_container_width=True, config=static_config)
 
-        # Chart 9: amenities_count vs price — Line Graph with Markers
-        st.markdown("##### Chart 9 · Amenities Count vs Average Rent (Line)")
-        agg9 = df_filtered.groupby('amenities_count', as_index=False)['price'].mean().sort_values('amenities_count')
-        fig9 = px.line(agg9, x='amenities_count', y='price', markers=True,
-                       labels={'amenities_count': 'Amenities Count', 'price': 'Average Price ($)'},
-                       color_discrete_sequence=['#FFA15A'])
-        fig9.update_layout(height=400)
-        st.plotly_chart(fig9, use_container_width=True, config=static_config)
-
-        # Chart 9B: Top 10 Cities by Number of Apartments — Line Chart
-        st.markdown("##### Chart 9B · Top 10 Cities by Number of Apartments (Line)")
-        top_cities_count = df_filtered['cityname'].value_counts().head(10).reset_index()
-        top_cities_count.columns = ['City', 'Count']
-        fig9b = px.line(top_cities_count, x='City', y='Count', markers=True,
-                        labels={'City': 'City Name', 'Count': 'Number of Apartments'},
-                        color_discrete_sequence=['#AB63FA'])
-        fig9b.update_layout(height=450, xaxis_tickangle=-45)
-        st.plotly_chart(fig9b, use_container_width=True, config=static_config)
+        # Chart 12: Line Graph (with Markers) — amenities_count vs. price
+        st.markdown("##### Chart 12 · Amenities Count vs Average Rent (Line Graph)")
+        agg12 = df_filtered.groupby('amenities_count', as_index=False)['price'].mean().sort_values('amenities_count')
+        fig12 = px.line(agg12, x='amenities_count', y='price', markers=True,
+                        labels={'amenities_count': 'Amenities Count', 'price': 'Average Price ($)'},
+                        color_discrete_sequence=['#FFA15A'])
+        fig12.update_layout(height=420)
+        st.plotly_chart(fig12, use_container_width=True, config=static_config)
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 3 — Physical Layout & Floorplan
     # ═════════════════════════════════════════════
     with subtab_layout:
-        st.subheader("3️⃣ Physical Layout & Floorplan Mechanics")
+        st.subheader("Physical Layout & Floorplan Mechanics")
 
-        # Chart 10: square_feet × bedrooms — 2D Pivot Heatmap (Median SqFt)
-        st.markdown("##### Chart 10 · Square Feet Tier × Bedrooms (Median Sq Ft Heatmap)")
-        df_h10 = df_filtered.dropna(subset=['square_feet']).copy()
-        df_h10['sqft_tier'] = pd.cut(df_h10['square_feet'],
-                                      bins=[0, 500, 800, 1200, 1800, 100000],
-                                      labels=['<500', '500–800', '800–1200', '1200–1800', '1800+'])
-        pivot10 = df_h10.pivot_table(index='sqft_tier', columns='bedrooms', values='square_feet',
-                                      aggfunc='median', fill_value=0, observed=True)
-        fig10 = px.imshow(pivot10, text_auto='.0f', aspect='auto',
-                          color_continuous_scale='YlGnBu',
-                          labels={'x': 'Bedrooms', 'y': 'Square Feet Tier', 'color': 'Median Sq Ft'})
-        fig10.update_layout(height=420)
-        st.plotly_chart(fig10, use_container_width=True, config=static_config)
+        col_l1, col_l2 = st.columns(2)
 
-        col_e, col_f = st.columns(2)
+        # Chart 5: Pie Chart — bedrooms
+        with col_l1:
+            st.markdown("##### Chart 5 · Bedrooms Distribution (Pie Chart)")
+            bed_counts5 = df_filtered['bedrooms'].value_counts().sort_index().reset_index()
+            bed_counts5.columns = ['Bedrooms', 'Count']
+            bed_counts5['Bedrooms'] = bed_counts5['Bedrooms'].astype(int).astype(str) + ' Bed'
+            fig5_pie = px.pie(bed_counts5, names='Bedrooms', values='Count',
+                              color_discrete_sequence=px.colors.qualitative.Pastel1)
+            fig5_pie.update_traces(textinfo='label+percent', textposition='outside')
+            fig5_pie.update_layout(height=420)
+            st.plotly_chart(fig5_pie, use_container_width=True, config=static_config)
 
-        # Chart 11: bedrooms Inventory Split — Pie Chart
-        with col_e:
-            st.markdown("##### Chart 11 · Bedroom Count Market Share (Pie)")
-            df_bed11 = df_filtered.copy()
-            df_bed11['Bedrooms'] = df_bed11['bedrooms'].apply(
-                lambda x: f"{int(x)} Bed" if x < 4 else "4+ Bed"
-            )
-            agg11 = df_bed11['Bedrooms'].value_counts().reset_index()
-            agg11.columns = ['Bedrooms', 'Count']
-            fig11 = px.pie(agg11, names='Bedrooms', values='Count',
-                           color_discrete_sequence=px.colors.qualitative.Set2)
-            fig11.update_layout(height=420)
-            st.plotly_chart(fig11, use_container_width=True, config=static_config)
+        # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
+        with col_l2:
+            st.markdown("##### Chart 13 · Top 10 Cities by Number of Apartments (Line Graph)")
+            top_cities13 = df_filtered['cityname'].value_counts().head(10).reset_index()
+            top_cities13.columns = ['City', 'Count']
+            fig13 = px.line(top_cities13, x='City', y='Count', markers=True,
+                            labels={'City': 'City Name', 'Count': 'Number of Apartments'},
+                            color_discrete_sequence=['#AB63FA'])
+            fig13.update_layout(height=420, xaxis_tickangle=-45)
+            st.plotly_chart(fig13, use_container_width=True, config=static_config)
 
-        # Chart 11B: Bedrooms Distribution — Pie Chart
-        st.markdown("##### Chart 11B · Bedrooms Distribution (Pie Chart)")
-        bed_counts_pie = df_filtered['bedrooms'].value_counts().sort_index().reset_index()
-        bed_counts_pie.columns = ['Bedrooms', 'Count']
-        bed_counts_pie['Bedrooms'] = bed_counts_pie['Bedrooms'].astype(int).astype(str) + ' Bed'
-        fig11b = px.pie(bed_counts_pie, names='Bedrooms', values='Count',
-                        color_discrete_sequence=px.colors.qualitative.Pastel1)
-        fig11b.update_traces(textinfo='label+percent', textposition='outside')
-        fig11b.update_layout(height=450)
-        st.plotly_chart(fig11b, use_container_width=True, config=static_config)
-
-        # Chart 12: state vs square_feet (Top 10) — Horizontal Bar (Median)
-        with col_f:
-            st.markdown("##### Chart 12 · Top 10 States by Median Apartment Size")
-            agg12 = df_filtered.groupby('state', as_index=False)['square_feet'].median() \
-                .nlargest(10, 'square_feet').sort_values('square_feet', ascending=True)
-            fig12 = px.bar(agg12, y='state', x='square_feet', orientation='h',
-                           labels={'square_feet': 'Median Sq Ft', 'state': 'State'},
-                           color='square_feet', color_continuous_scale='Peach')
-            fig12.update_layout(height=450, yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig12, use_container_width=True, config=static_config)
-
-        st.divider()
-
-        # ── Multi‑Variable Feature Interactions ──────────────
-        st.subheader("4️⃣ Multi‑Variable Feature Interactions")
-
-        # Chart 13: bedrooms × bathrooms vs price — 2D Matrix Heatmap
-        st.markdown("##### Chart 13 · Bedrooms × Bathrooms → Average Rent Heatmap")
-        pivot13 = df_filtered.pivot_table(index='bathrooms', columns='bedrooms', values='price',
+        # Chart 14: 2D Matrix Heatmap — bedrooms × bathrooms vs. price
+        st.markdown("##### Chart 14 · Bedrooms × Bathrooms → Average Rent (2D Matrix Heatmap)")
+        pivot14 = df_filtered.pivot_table(index='bathrooms', columns='bedrooms', values='price',
                                            aggfunc='mean', observed=True)
-        fig13 = px.imshow(pivot13, text_auto='$,.0f', aspect='auto',
+        fig14 = px.imshow(pivot14, text_auto='$,.0f', aspect='auto',
                           color_continuous_scale='RdYlGn',
                           labels={'x': 'Bedrooms', 'y': 'Bathrooms', 'color': 'Avg Rent ($)'})
-        fig13.update_layout(height=420)
-        st.plotly_chart(fig13, use_container_width=True, config=static_config)
+        fig14.update_layout(height=450)
+        st.plotly_chart(fig14, use_container_width=True, config=static_config)
 
-        col_g, col_h = st.columns(2)
+        # Chart 15: 2D Pivot Heatmap — square_feet (binned) × bedrooms
+        st.markdown("##### Chart 15 · Square Feet Tier × Bedrooms (2D Pivot Heatmap)")
+        df_h15 = df_filtered.dropna(subset=['square_feet']).copy()
+        df_h15['sqft_tier'] = pd.cut(df_h15['square_feet'],
+                                      bins=[0, 500, 800, 1200, 1800, 100000],
+                                      labels=['<500', '500–800', '800–1200', '1200–1800', '1800+'])
+        pivot15 = df_h15.pivot_table(index='sqft_tier', columns='bedrooms', values='square_feet',
+                                      aggfunc='median', fill_value=0, observed=True)
+        fig15 = px.imshow(pivot15, text_auto='.0f', aspect='auto',
+                          color_continuous_scale='YlGnBu',
+                          labels={'x': 'Bedrooms', 'y': 'Square Feet Tier', 'color': 'Median Sq Ft'})
+        fig15.update_layout(height=450)
+        st.plotly_chart(fig15, use_container_width=True, config=static_config)
 
-        # Chart 14: pets_allowed_bin × bedrooms vs price — Grouped Multi‑Bar
-        with col_g:
-            st.markdown("##### Chart 14 · Pet Policy × Bedrooms → Average Rent")
-            df_p14 = df_filtered.copy()
-            df_p14['Pet Policy'] = df_p14['pets_allowed_bin'].map({0: 'No Pets', 1: 'Pets Allowed'})
-            agg14 = df_p14.groupby(['bedrooms', 'Pet Policy'], as_index=False)['price'].mean()
-            fig14 = px.bar(agg14, x='bedrooms', y='price', color='Pet Policy', barmode='group',
-                           labels={'price': 'Avg Price ($)', 'bedrooms': 'Bedrooms'},
-                           color_discrete_sequence=['#EF553B', '#00CC96'])
-            fig14.update_layout(height=420)
-            st.plotly_chart(fig14, use_container_width=True, config=static_config)
+        col_l3, col_l4 = st.columns(2)
 
-        # Chart 15: bedrooms × Multi‑Attribute Profile — Radar Chart
-        with col_h:
-            st.markdown("##### Chart 15 · Multi‑Attribute Profile by Bedrooms (Radar)")
+        # Chart 16: Pie Chart — bedrooms (Market Share Split)
+        with col_l3:
+            st.markdown("##### Chart 16 · Bedroom Count Market Share (Pie Chart)")
+            df_bed16 = df_filtered.copy()
+            df_bed16['Bedrooms'] = df_bed16['bedrooms'].apply(
+                lambda x: f"{int(x)} Bed" if x < 4 else "4+ Bed"
+            )
+            agg16 = df_bed16['Bedrooms'].value_counts().reset_index()
+            agg16.columns = ['Bedrooms', 'Count']
+            fig16 = px.pie(agg16, names='Bedrooms', values='Count',
+                           color_discrete_sequence=px.colors.qualitative.Set2)
+            fig16.update_traces(textinfo='label+percent', textposition='outside')
+            fig16.update_layout(height=420)
+            st.plotly_chart(fig16, use_container_width=True, config=static_config)
+
+        # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
+        with col_l4:
+            st.markdown("##### Chart 17 · Multi-Attribute Profile by Bedrooms (Radar Chart)")
             bed_vals = sorted(df_filtered['bedrooms'].dropna().unique())
-            bed_vals = [b for b in bed_vals if b > 0][:5]  # first 5 non‑zero
+            bed_vals = [b for b in bed_vals if b > 0][:5]
             radar_attrs = ['price', 'square_feet', 'bathrooms', 'amenities_count']
             radar_labels = ['Price', 'Sq Ft', 'Bathrooms', 'Amenities']
 
             agg_radar = df_filtered[df_filtered['bedrooms'].isin(bed_vals)] \
                 .groupby('bedrooms')[radar_attrs].mean()
 
-            # Normalise each attribute to 0‑1
             radar_norm = agg_radar.copy()
             for rc in radar_attrs:
                 rc_min, rc_max = radar_norm[rc].min(), radar_norm[rc].max()
@@ -516,12 +537,12 @@ with tab1:
                 else:
                     radar_norm[rc] = 0.5
 
-            fig15 = go.Figure()
+            fig17 = go.Figure()
             radar_colors = px.colors.qualitative.Set2
             for idx, bed in enumerate(bed_vals):
                 vals = radar_norm.loc[bed].tolist()
-                vals.append(vals[0])  # close polygon
-                fig15.add_trace(go.Scatterpolar(
+                vals.append(vals[0])
+                fig17.add_trace(go.Scatterpolar(
                     r=vals,
                     theta=radar_labels + [radar_labels[0]],
                     fill='toself',
@@ -529,11 +550,11 @@ with tab1:
                     line_color=radar_colors[idx % len(radar_colors)],
                     opacity=0.7,
                 ))
-            fig15.update_layout(
+            fig17.update_layout(
                 height=420,
                 polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
             )
-            st.plotly_chart(fig15, use_container_width=True, config=static_config)
+            st.plotly_chart(fig17, use_container_width=True, config=static_config)
 
 
 # ═══════════════════════════════════════════════
