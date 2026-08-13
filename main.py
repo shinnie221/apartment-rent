@@ -250,7 +250,8 @@ with tab1:
 
         try:
             from scipy.stats import gaussian_kde
-            kde = gaussian_kde(data)
+            kde_data = data.sample(5000, random_state=42) if len(data) > 5000 else data
+            kde = gaussian_kde(kde_data)
             x_range = np.linspace(data.min(), data.max(), 200)
             kde_values = kde(x_range)
             bin_width = (data.max() - data.min()) / nbins
@@ -636,7 +637,8 @@ with tab3:
 # ═══════════════════════════════════════════════
 #  TAB 4 — PRICE PREDICTOR
 # ═══════════════════════════════════════════════
-with tab4:
+@st.fragment
+def render_price_predictor():
     st.header("Price Predictor")
     st.markdown("Enter apartment features and select a model to predict the estimated monthly rent.")
 
@@ -675,3 +677,6 @@ with tab4:
         sel_pred = sel_info['predict_fn'](sel_info['model'], sel_info['scaler'], sel_info['features'], input_data)
 
         st.success(f"### Estimated Monthly Rent ({pred_model_name}): **${sel_pred:,.2f}**")
+
+with tab4:
+    render_price_predictor()
