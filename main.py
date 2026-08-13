@@ -218,44 +218,14 @@ bed_range = st.sidebar.slider(
     value=(bed_min, bed_max), step=1
 )
 
-# Bathrooms range
-bath_min = float(df_explore['bathrooms'].min())
-bath_max = float(df_explore['bathrooms'].max())
-bath_range = st.sidebar.slider(
-    "Bathrooms Range", min_value=bath_min, max_value=bath_max,
-    value=(bath_min, bath_max), step=0.5
-)
-
-# Pet Allowed filter
-pet_options = ["All", "Pet-Friendly Only", "No Pets Only"]
-selected_pet = st.sidebar.radio("Pet Policy", pet_options, index=0)
-
-# Amenities count range
-amen_min = int(df_explore['amenities_count'].min())
-amen_max = int(df_explore['amenities_count'].max())
-amen_range = st.sidebar.slider(
-    "Amenities Count Range", min_value=amen_min, max_value=amen_max,
-    value=(amen_min, amen_max), step=1
-)
-
 # Apply filters
-mask = (
+df_filtered = df_explore[
     (df_explore['price'] >= price_range[0]) &
     (df_explore['price'] <= price_range[1]) &
     (df_explore['state'].isin(selected_states)) &
     (df_explore['bedrooms'] >= bed_range[0]) &
-    (df_explore['bedrooms'] <= bed_range[1]) &
-    (df_explore['bathrooms'] >= bath_range[0]) &
-    (df_explore['bathrooms'] <= bath_range[1]) &
-    (df_explore['amenities_count'] >= amen_range[0]) &
-    (df_explore['amenities_count'] <= amen_range[1])
-)
-if selected_pet == "Pet-Friendly Only":
-    mask = mask & (df_explore['pets_allowed_bin'] == 1)
-elif selected_pet == "No Pets Only":
-    mask = mask & (df_explore['pets_allowed_bin'] == 0)
-
-df_filtered = df_explore[mask].copy()
+    (df_explore['bedrooms'] <= bed_range[1])
+].copy()
 
 st.sidebar.markdown(f"**Showing {len(df_filtered):,} / {len(df_explore):,} apartments**")
 
@@ -265,10 +235,10 @@ st.sidebar.markdown(f"**Showing {len(df_filtered):,} / {len(df_explore):,} apart
 st.title("🏢 Apartment Rental Price Prediction & Valuation System")
 
 tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 Visualisation Dashboard",
-    "🤖 Model Comparison",
-    "📋 Data Explorer",
-    "🏠 Price Predictor",
+    "Visualisation Dashboard",
+    "Model Comparison",
+    "Data Explorer",
+    "Price Predictor",
 ])
 
 # Chart config – disable zoom/pan/toolbar
@@ -280,65 +250,34 @@ static_config = {'staticPlot': True, 'displayModeBar': False}
 #  Organised into 3 sub‑tabs
 # ═══════════════════════════════════════════════
 with tab1:
-    st.header("📊 Visualisation Dashboard")
+    st.header("Visualisation Dashboard")
     st.caption(f"All charts reflect current sidebar filters ({len(df_filtered):,} records).")
 
     subtab_loc, subtab_feat, subtab_layout = st.tabs([
-        "📍 Location & Geographic",
-        "📈 Single Feature vs Price",
-        "🏗️ Physical Layout & Floorplan",
+        "Location & Geographic",
+        "Single Feature vs Price",
+        "Physical Layout & Floorplan",
     ])
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 1 — Location & Geographic Drivers
     # ═════════════════════════════════════════════
     with subtab_loc:
-        st.subheader("1️⃣ Location & Geographic Drivers")
+        st.subheader("Location & Geographic Drivers")
 
-        # Chart 1: state vs price (Top 10) — Horizontal Bar — Median Rent
-        st.markdown("##### Chart 1 · Top 10 States by Median Rent")
-        agg1 = df_filtered.groupby('state', as_index=False)['price'].median() \
-            .nlargest(10, 'price').sort_values('price', ascending=True)
-        fig1 = px.bar(agg1, y='state', x='price', orientation='h',
-                      labels={'price': 'Median Rent ($)', 'state': 'State'},
-                      color='price', color_continuous_scale='Tealgrn')
-        fig1.update_layout(height=450, yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(fig1, use_container_width=True, config=static_config)
-
-        # Chart 2: cityname vs price (Top 10) — Box Plot
-        st.markdown("##### Chart 2 · Top 10 Cities — Price Distribution (Box Plot)")
-        top10_cities = df_filtered.groupby('cityname')['price'].median().nlargest(10).index.tolist()
-        df_top10_cities = df_filtered[df_filtered['cityname'].isin(top10_cities)]
-        fig2 = px.box(df_top10_cities, x='cityname', y='price',
-                      labels={'price': 'Price ($)', 'cityname': 'City'},
-                      color='cityname', color_discrete_sequence=px.colors.qualitative.Set2)
-        fig2.update_layout(height=500, xaxis={'categoryorder': 'median descending'}, showlegend=False)
-        st.plotly_chart(fig2, use_container_width=True, config=static_config)
-
-        # Chart 3: price_per_sqft Distribution — Histogram with marginal box
-        st.markdown("##### Chart 3 · Price per Sq Ft Distribution (Histogram)")
-        df_ppsf = df_filtered.dropna(subset=['price_per_sqft']).copy()
-        q99 = df_ppsf['price_per_sqft'].quantile(0.99)
-        df_ppsf = df_ppsf[df_ppsf['price_per_sqft'] <= q99]
-        fig3 = px.histogram(df_ppsf, x='price_per_sqft', nbins=60, marginal='box',
-                            labels={'price_per_sqft': 'Price per Sq Ft ($/sq ft)', 'count': 'Count'},
-                            color_discrete_sequence=['#636EFA'])
-        fig3.update_layout(height=450)
-        st.plotly_chart(fig3, use_container_width=True, config=static_config)
-
-        # Chart 3B: Distribution of Apartment Prices — Histogram
-        st.markdown("##### Chart 3B · Distribution of Apartment Prices (Histogram)")
+        # Chart 1: Distribution of Apartment Prices — Histogram
+        st.markdown("##### Chart 1 · Distribution of Apartment Prices")
         df_price_hist = df_filtered.dropna(subset=['price']).copy()
         q99_price = df_price_hist['price'].quantile(0.99)
         df_price_hist = df_price_hist[df_price_hist['price'] <= q99_price]
-        fig3b = px.histogram(df_price_hist, x='price', nbins=50,
+        fig3b = px.histplot(df_price_hist, x='price', nbins=50,
                              labels={'price': 'Price ($)', 'count': 'Frequency'},
                              color_discrete_sequence=['#87CEEB'])
         fig3b.update_layout(height=450, xaxis_title='Price ($)', yaxis_title='Frequency')
         st.plotly_chart(fig3b, use_container_width=True, config=static_config)
 
-        # Chart 3C: Average Apartment Price by State (Top 10 by listing count)
-        st.markdown("##### Chart 3C · Average Price by State (Top 10 by Listing Count)")
+        # Chart 2: Average Apartment Price by State (Top 10 by listing count)
+        st.markdown("##### Chart 2 · Average Price by State (Top 10 by Listing Count)")
         state_counts = df_filtered['state'].value_counts()
         top_10_states_by_count = state_counts.head(10).index.tolist()
         df_top10_listing = df_filtered[df_filtered['state'].isin(top_10_states_by_count)]
@@ -351,7 +290,7 @@ with tab1:
         st.plotly_chart(fig3c, use_container_width=True, config=static_config)
 
         # Chart 3D: Distribution of Latitude-Longitude Difference — Histogram
-        st.markdown("##### Chart 3D · Distribution of Latitude–Longitude Difference")
+        st.markdown("##### Chart 3 · Distribution of Latitude–Longitude Difference")
         df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
         fig3d = px.histogram(df_latlon, x='lat_lon_diff', nbins=50,
                              labels={'lat_lon_diff': 'Latitude − Longitude Difference', 'count': 'Number of Apartments'},
@@ -364,7 +303,7 @@ with tab1:
     #  SUB‑TAB 2 — Single Feature vs Price Drivers
     # ═════════════════════════════════════════════
     with subtab_feat:
-        st.subheader("2️⃣ Single Feature vs Price Drivers")
+        st.subheader("Single Feature vs Price Drivers")
 
         col_a, col_b = st.columns(2)
 
