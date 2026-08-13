@@ -533,17 +533,12 @@ with tab2:
     cls_rows = []
     for name, info in models_dict.items():
         labels, yt_bin, yp_bin, _ = price_quartile_metrics(info['y_test'], info['y_pred'])
-        # Compute adjacent quartile accuracy (within +-1 quartile)
-        yt_codes = pd.Series(yt_bin).cat.codes.values
-        yp_codes = pd.Series(yp_bin).cat.codes.values
-        adj_acc = np.mean(np.abs(yt_codes - yp_codes) <= 1)
-
         cls_rows.append({
             'Model': name,
-            'Exact Quartile Accuracy': round(accuracy_score(yt_bin, yp_bin), 4),
-            'Adjacent Accuracy (±1 Quartile)': round(adj_acc, 4),
-            'F1 Score (Macro)': round(f1_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
-            'Precision (Macro)': round(precision_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
+            'Accuracy': round(accuracy_score(yt_bin, yp_bin), 4),
+            'Precision': round(precision_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
+            'F1 Score': round(f1_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
+            'Recall': round(recall_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
         })
     df_cls = pd.DataFrame(cls_rows)
     st.dataframe(df_cls, use_container_width=True, hide_index=True)
