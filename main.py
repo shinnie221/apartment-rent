@@ -536,9 +536,9 @@ with tab2:
         cls_rows.append({
             'Model': name,
             'Accuracy': round(accuracy_score(yt_bin, yp_bin), 4),
-            'Precision': round(precision_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
-            'F1 Score': round(f1_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
-            'Recall': round(recall_score(yt_bin, yp_bin, average='macro', zero_division=0), 4),
+            'Precision (Weighted)': round(precision_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
+            'Recall (Weighted)': round(recall_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
+            'F1 Score (Weighted)': round(f1_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
         })
     df_cls = pd.DataFrame(cls_rows)
     st.dataframe(df_cls, use_container_width=True, hide_index=True)
