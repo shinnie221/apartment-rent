@@ -60,9 +60,11 @@ def preprocess_data(df, clip_outliers=True):
         else:
             df['pets_allowed_bin'] = 0
 
-    # Engineered Feature Ratios
+    # Engineered Feature Ratios & Log Transforms
     df['sqft_per_room'] = df['square_feet'] / (df['bedrooms'] + df['bathrooms'] + 1)
     df['bath_bed_ratio'] = df['bathrooms'] / (df['bedrooms'] + 1)
+    df['log_sqft'] = np.log1p(df['square_feet'])
+    df['total_rooms'] = df['bedrooms'] + df['bathrooms']
 
     # City Mean Price Target Encoding
     if 'cityname' in df.columns and 'price' in df.columns:

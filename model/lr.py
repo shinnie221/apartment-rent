@@ -13,7 +13,7 @@ def train_model(df):
     # Define features
     feature_cols = [
         'bedrooms', 'bathrooms', 'pets_allowed_bin', 'amenities_count', 'square_feet',
-        'latitude', 'longitude', 'sqft_per_room', 'bath_bed_ratio', 'city_mean_price'
+        'log_sqft', 'total_rooms', 'latitude', 'longitude', 'sqft_per_room', 'bath_bed_ratio', 'city_mean_price'
     ]
     state_cols = [col for col in df_processed.columns if col.startswith('state_')]
     feature_cols.extend(state_cols)
@@ -22,22 +22,26 @@ def train_model(df):
     df_processed = df_processed.dropna(subset=feature_cols + ['price'])
     
     X = df_processed[feature_cols]
-    y = df_processed['price']  # Continuous Target Variable
+    y = df_processed['price']
+    y_log = np.log1p(y)
     
     # Train-test split
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test, y_train_log, y_test_log = train_test_split(
+        X, y, y_log, test_size=0.2, random_state=42
+    )
     
     # Scale numeric features
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Train model
+    # Train model on log target
     model = LinearRegression(n_jobs=-1)
-    model.fit(X_train_scaled, y_train)
+    model.fit(X_train_scaled, y_train_log)
     
-    # Predict on test
-    y_pred = model.predict(X_test_scaled)
+    # Predict on test and transform back to USD scale
+    y_pred_log = model.predict(X_test_scaled)
+    y_pred = np.maximum(0.0, np.expm1(y_pred_log))
     
     # Regression metrics
     mae = mean_absolute_error(y_test, y_pred)
@@ -61,6 +65,8 @@ def predict_property(model, scaler, feature_names, input_data):
     
     df_in['sqft_per_room'] = sqft / (beds + baths + 1)
     df_in['bath_bed_ratio'] = baths / (beds + 1)
+    df_in['log_sqft'] = np.log1p(sqft)
+    df_in['total_rooms'] = beds + baths
     if 'latitude' not in df_in.columns:
         df_in['latitude'] = 37.0
     if 'longitude' not in df_in.columns:
@@ -78,6 +84,7 @@ def predict_property(model, scaler, feature_names, input_data):
             X_in[state_col] = 1.0
             
     X_in_scaled = scaler.transform(X_in)
-    predicted_rent = model.predict(X_in_scaled)[0]
+    predicted_rent_log = model.predict(X_in_scaled)[0]
+    predicted_rent = np.expm1(predicted_rent_log)
     
     return max(0.0, float(predicted_rent))  # Ensure valid non-negative rent
