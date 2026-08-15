@@ -549,17 +549,7 @@ with tab2:
             'F1 Score (Weighted)': round(f1_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
         })
     df_cls = pd.DataFrame(cls_rows)
-
-    # Styled table with color gradients to highlight significant metric differences
-    styled_df_cls = df_cls.style.background_gradient(
-        cmap="YlGnBu", subset=['Accuracy', 'Precision (Weighted)', 'Recall (Weighted)', 'F1 Score (Weighted)']
-    ).format({
-        'Accuracy': '{:.4f}',
-        'Precision (Weighted)': '{:.4f}',
-        'Recall (Weighted)': '{:.4f}',
-        'F1 Score (Weighted)': '{:.4f}'
-    })
-    st.dataframe(styled_df_cls, use_container_width=True, hide_index=True)
+    st.dataframe(df_cls, use_container_width=True, hide_index=True)
 
     # Grouped Bar Chart comparing Classification Metrics across models
     st.markdown("#### Model Classification Performance Comparison")
@@ -611,15 +601,7 @@ with tab2:
                 'F1 Score': round(r['f1-score'], 4),
             })
     df_class = pd.DataFrame(class_rows)
-    styled_df_class = df_class.style.background_gradient(
-        cmap="Purples", subset=['Accuracy', 'Precision', 'Recall', 'F1 Score']
-    ).format({
-        'Accuracy': '{:.4f}',
-        'Precision': '{:.4f}',
-        'Recall': '{:.4f}',
-        'F1 Score': '{:.4f}'
-    })
-    st.dataframe(styled_df_class, use_container_width=True, hide_index=True)
+    st.dataframe(df_class, use_container_width=True, hide_index=True)
 
     # Class-Level Performance Bar Chart
     df_class_melt = df_class.melt(id_vars=['Price Range'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1 Score'],
