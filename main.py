@@ -78,7 +78,7 @@ def get_trained_models(_df):
 # ──────────────────────────────────────────────
 #  HELPER: quartile‑based classification metrics
 # ──────────────────────────────────────────────
-def price_quartile_metrics(y_test, y_pred):
+def price_quartile_metrics(y_test, y_pred, global_edges=None):
     """
     Bin *actual* test prices into 4 equal‑frequency quartiles,
     then assign predicted prices to the same bin edges.
@@ -87,12 +87,14 @@ def price_quartile_metrics(y_test, y_pred):
     y_test = np.array(y_test)
     y_pred = np.array(y_pred)
 
-    # Create 4 equal‑frequency bins from actual prices
-    quartile_edges = np.quantile(y_test, [0, 0.25, 0.50, 0.75, 1.0])
-    # Ensure unique edges (add tiny epsilon if needed)
-    quartile_edges = np.unique(quartile_edges)
-    if len(quartile_edges) < 3:
-        quartile_edges = np.linspace(y_test.min(), y_test.max(), 5)
+    if global_edges is not None:
+        quartile_edges = global_edges
+    else:
+        # Create 4 equal‑frequency bins from actual prices
+        quartile_edges = np.quantile(y_test, [0, 0.25, 0.50, 0.75, 1.0])
+        quartile_edges = np.unique(quartile_edges)
+        if len(quartile_edges) < 3:
+            quartile_edges = np.linspace(y_test.min(), y_test.max(), 5)
 
     labels = _make_labels(quartile_edges)
 
@@ -527,12 +529,18 @@ with tab2:
     # ── 2c. Classification Metrics (Price Quartiles) ─────────
     st.subheader("Classification Metrics on Price Quartiles")
     st.caption("Prices are split into 4 equal‑frequency quartiles (25 % each). "
-               "Predicted prices are binned with the same edges to compute classification metrics.")
+               "Predicted prices are binned with identical global quartile edges to accurately compare model classification performance.")
+
+    # Calculate global uniform quartile edges from overall dataset
+    global_q_edges = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
+    global_q_edges = np.unique(global_q_edges)
+    if len(global_q_edges) < 3:
+        global_q_edges = np.linspace(df_explore['price'].min(), df_explore['price'].max(), 5)
 
     # Overall classification table for all models
     cls_rows = []
     for name, info in models_dict.items():
-        labels, yt_bin, yp_bin, _ = price_quartile_metrics(info['y_test'], info['y_pred'])
+        labels, yt_bin, yp_bin, _ = price_quartile_metrics(info['y_test'], info['y_pred'], global_edges=global_q_edges)
         cls_rows.append({
             'Model': name,
             'Accuracy': round(accuracy_score(yt_bin, yp_bin), 4),
@@ -541,7 +549,26 @@ with tab2:
             'F1 Score (Weighted)': round(f1_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
         })
     df_cls = pd.DataFrame(cls_rows)
-    st.dataframe(df_cls, use_container_width=True, hide_index=True)
+
+    # Styled table with color gradients to highlight significant metric differences
+    styled_df_cls = df_cls.style.background_gradient(
+        cmap="YlGnBu", subset=['Accuracy', 'Precision (Weighted)', 'Recall (Weighted)', 'F1 Score (Weighted)']
+    ).format({
+        'Accuracy': '{:.4f}',
+        'Precision (Weighted)': '{:.4f}',
+        'Recall (Weighted)': '{:.4f}',
+        'F1 Score (Weighted)': '{:.4f}'
+    })
+    st.dataframe(styled_df_cls, use_container_width=True, hide_index=True)
+
+    # Grouped Bar Chart comparing Classification Metrics across models
+    st.markdown("#### Model Classification Performance Comparison")
+    df_cls_melt = df_cls.melt(id_vars=['Model'], value_vars=['Accuracy', 'F1 Score (Weighted)'],
+                              var_name='Metric', value_name='Score')
+    fig_cls_bar = px.bar(df_cls_melt, x='Model', y='Score', color='Metric', barmode='group',
+                         text_auto='.4f', color_discrete_sequence=['#636EFA', '#00CC96'])
+    fig_cls_bar.update_layout(height=420, yaxis_range=[0, 1.0], yaxis_title="Score")
+    st.plotly_chart(fig_cls_bar, use_container_width=True, config=static_config, key="chart_tab2_cls_bar")
 
     st.divider()
 
@@ -550,7 +577,7 @@ with tab2:
     model_choice = st.selectbox("Select a model to inspect", list(models_dict.keys()))
 
     info = models_dict[model_choice]
-    labels, yt_bin, yp_bin, q_edges = price_quartile_metrics(info['y_test'], info['y_pred'])
+    labels, yt_bin, yp_bin, q_edges = price_quartile_metrics(info['y_test'], info['y_pred'], global_edges=global_q_edges)
 
     # Actual vs Predicted Scatter
     st.markdown("#### Actual vs Predicted Price Scatter Plot")
@@ -578,13 +605,30 @@ with tab2:
             r = report[lbl]
             class_rows.append({
                 'Price Range': lbl,
+                'Accuracy': round(accuracy_score(yt_bin == lbl, yp_bin == lbl), 4),
                 'Precision': round(r['precision'], 4),
                 'Recall': round(r['recall'], 4),
                 'F1 Score': round(r['f1-score'], 4),
-                'Support': int(r['support']),
             })
     df_class = pd.DataFrame(class_rows)
-    st.dataframe(df_class, use_container_width=True, hide_index=True)
+    styled_df_class = df_class.style.background_gradient(
+        cmap="Purples", subset=['Accuracy', 'Precision', 'Recall', 'F1 Score']
+    ).format({
+        'Accuracy': '{:.4f}',
+        'Precision': '{:.4f}',
+        'Recall': '{:.4f}',
+        'F1 Score': '{:.4f}'
+    })
+    st.dataframe(styled_df_class, use_container_width=True, hide_index=True)
+
+    # Class-Level Performance Bar Chart
+    df_class_melt = df_class.melt(id_vars=['Price Range'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1 Score'],
+                                  var_name='Metric', value_name='Score')
+    fig_class_bar = px.bar(df_class_melt, x='Price Range', y='Score', color='Metric', barmode='group',
+                           text_auto='.4f', color_discrete_sequence=['#AB63FA', '#FFA15A', '#19D3F3', '#FF6692'],
+                           title=f"Quartile Performance Breakdown — {model_choice}")
+    fig_class_bar.update_layout(height=420, yaxis_range=[0, 1.0], yaxis_title="Score")
+    st.plotly_chart(fig_class_bar, use_container_width=True, config=static_config, key="chart_tab2_class_bar")
 
     # Confusion Matrix
     st.markdown("#### Confusion Matrix")
