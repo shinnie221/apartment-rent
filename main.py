@@ -4,7 +4,11 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.figure_factory as ff
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, confusion_matrix, classification_report
+from sklearn.metrics import (
+    accuracy_score, f1_score, precision_score, recall_score,
+    confusion_matrix, classification_report, roc_auc_score, roc_curve, auc
+)
+from sklearn.preprocessing import label_binarize
 
 # Set page config
 st.set_page_config(page_title="Apartment Rental Price Prediction & Valuation System", page_icon="🏢", layout="wide")
@@ -122,6 +126,58 @@ def _make_labels(edges):
     return labels
 
 
+def compute_quartile_roc_auc(y_test, y_pred, global_edges=None):
+    """
+    Compute One-vs-Rest ROC curves and ROC-AUC scores for price quartile classification.
+    Returns (roc_data_dict, weighted_auc_score).
+    """
+    y_test = np.array(y_test)
+    y_pred = np.array(y_pred)
+
+    if global_edges is not None:
+        quartile_edges = global_edges
+    else:
+        quartile_edges = np.quantile(y_test, [0, 0.25, 0.50, 0.75, 1.0])
+        quartile_edges = np.unique(quartile_edges)
+        if len(quartile_edges) < 3:
+            quartile_edges = np.linspace(y_test.min(), y_test.max(), 5)
+
+    labels = _make_labels(quartile_edges)
+    num_bins = len(labels)
+    centers = [(quartile_edges[i] + quartile_edges[i+1]) / 2.0 for i in range(num_bins)]
+
+    y_test_binned = pd.cut(y_test, bins=quartile_edges, labels=labels, include_lowest=True)
+
+    roc_data = {}
+    class_aucs = []
+    class_counts = []
+
+    for i, lbl in enumerate(labels):
+        y_true_binary = (y_test_binned == lbl).astype(int)
+        scores = -np.abs(y_pred - centers[i])
+        count = np.sum(y_true_binary)
+        class_counts.append(count)
+
+        if len(np.unique(y_true_binary)) > 1:
+            fpr, tpr, _ = roc_curve(y_true_binary, scores)
+            roc_val = auc(fpr, tpr)
+        else:
+            fpr, tpr = np.array([0, 1]), np.array([0, 1])
+            roc_val = 0.5
+
+        roc_data[lbl] = {
+            'fpr': fpr,
+            'tpr': tpr,
+            'auc': round(float(roc_val), 4)
+        }
+        class_aucs.append(roc_val)
+
+    total_samples = sum(class_counts)
+    weighted_auc = sum(a * c for a, c in zip(class_aucs, class_counts)) / total_samples if total_samples > 0 else 0.5
+
+    return roc_data, round(float(weighted_auc), 4)
+
+
 # ──────────────────────────────────────────────
 #  LOAD DATA & TRAIN MODELS
 # ──────────────────────────────────────────────
@@ -222,8 +278,9 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "Price Predictor",
 ])
 
-# Chart config – disable zoom/pan/toolbar
-static_config = {'staticPlot': True, 'displayModeBar': False}
+# Chart config – enable interactive hover and tooltips while hiding modebar
+chart_config = {'displayModeBar': False}
+static_config = chart_config
 
 
 # ═══════════════════════════════════════════════
@@ -232,7 +289,7 @@ static_config = {'staticPlot': True, 'displayModeBar': False}
 # ═══════════════════════════════════════════════
 with tab1:
     st.header("Visualisation Dashboard")
-    st.caption(f"All charts reflect current sidebar filters ({len(df_filtered):,} records).")
+    st.caption(f"All charts reflect current sidebar filters ({len(df_filtered):,} records). Hover over any chart segment to view detailed labels.")
 
     subtab_loc, subtab_feat, subtab_layout = st.tabs([
         "Location & Geographic",
@@ -263,12 +320,13 @@ with tab1:
                 x=x_range, y=kde_scaled,
                 mode='lines',
                 name='KDE',
-                line=dict(color='#1f77b4', width=2.5)
+                line=dict(color='#1f77b4', width=2.5),
+                hovertemplate=f'{x_label}: %{{x:,.2f}}<br>KDE Density: %{{y:,.2f}}<extra></extra>'
             ))
         except Exception:
             pass
 
-        fig.update_layout(height=450, xaxis_title=x_label, yaxis_title=y_label, showlegend=False)
+        fig.update_layout(height=450, xaxis_title=x_label, yaxis_title=y_label, showlegend=False, hoverlabel=dict(font_size=13))
         return fig
 
     # ═════════════════════════════════════════════
@@ -283,7 +341,7 @@ with tab1:
         q99_price = df_price_hist['price'].quantile(0.99)
         df_price_hist = df_price_hist[df_price_hist['price'] <= q99_price]
         fig1 = make_kde_histogram(df_price_hist, 'price', 'Distribution of Apartment Prices', 'Price ($)', 'Frequency')
-        st.plotly_chart(fig1, use_container_width=True, config=static_config, key="chart_1")
+        st.plotly_chart(fig1, use_container_width=True, config=chart_config, key="chart_1")
 
         # Chart 2: Bar Chart — state vs. price_cleaned (Top 10)
         st.markdown("##### Bar Chart of Average Apartment Price by State (Top 10)")
@@ -294,15 +352,16 @@ with tab1:
         fig2 = px.bar(avg_price_state, x='state', y='price',
                       labels={'price': 'Average Price ($)', 'state': 'State'},
                       color='price', color_continuous_scale='Viridis')
-        fig2.update_layout(height=450, xaxis_tickangle=-45)
-        st.plotly_chart(fig2, use_container_width=True, config=static_config, key="chart_2")
+        fig2.update_traces(hovertemplate='<b>State: %{x}</b><br>Average Price: $%{y:,.2f}<extra></extra>')
+        fig2.update_layout(height=450, xaxis_tickangle=-45, hoverlabel=dict(font_size=13))
+        st.plotly_chart(fig2, use_container_width=True, config=chart_config, key="chart_2")
 
         # Chart 3: Histogram with KDE — lat_lon_diff
         st.markdown("##### Distribution of Latitude-Longitude Difference (Histogram with KDE)")
         df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
         fig3 = make_kde_histogram(df_latlon, 'lat_lon_diff', 'Distribution of Latitude-Longitude Difference',
                                   'Latitude − Longitude Difference', 'Number of Apartments', color='#87CEEB')
-        st.plotly_chart(fig3, use_container_width=True, config=static_config, key="chart_3")
+        st.plotly_chart(fig3, use_container_width=True, config=chart_config, key="chart_3")
 
         col_loc_a, col_loc_b = st.columns(2)
 
@@ -314,8 +373,9 @@ with tab1:
             fig4 = px.line(top_cities, x='City', y='Count', markers=True,
                            labels={'City': 'City Name', 'Count': 'Number of Apartments'},
                            color_discrete_sequence=['purple'])
-            fig4.update_layout(height=420, xaxis_tickangle=-45)
-            st.plotly_chart(fig4, use_container_width=True, config=static_config, key="chart_4")
+            fig4.update_traces(hovertemplate='<b>City: %{x}</b><br>Apartments: %{y:,}<extra></extra>')
+            fig4.update_layout(height=420, xaxis_tickangle=-45, hoverlabel=dict(font_size=13))
+            st.plotly_chart(fig4, use_container_width=True, config=chart_config, key="chart_4")
 
         # Chart 10: Horizontal Bar Chart — state vs. square_feet
         with col_loc_b:
@@ -325,8 +385,9 @@ with tab1:
             fig10 = px.bar(agg10, y='state', x='square_feet', orientation='h',
                            labels={'square_feet': 'Median Sq Ft', 'state': 'State'},
                            color='square_feet', color_continuous_scale='Peach')
-            fig10.update_layout(height=420, yaxis={'categoryorder': 'total ascending'})
-            st.plotly_chart(fig10, use_container_width=True, config=static_config, key="chart_10")
+            fig10.update_traces(hovertemplate='<b>State: %{y}</b><br>Median Size: %{x:,.0f} sq ft<extra></extra>')
+            fig10.update_layout(height=420, yaxis={'categoryorder': 'total ascending'}, hoverlabel=dict(font_size=13))
+            st.plotly_chart(fig10, use_container_width=True, config=chart_config, key="chart_10")
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 2 — Single Feature vs Price Drivers
@@ -343,8 +404,9 @@ with tab1:
         fig6 = px.histogram(df_p6, x='price', color='Pet Policy', barmode='group', nbins=50,
                             labels={'price': 'Rental Price ($)', 'count': 'Count'},
                             color_discrete_sequence=['#EF553B', '#00CC96'])
-        fig6.update_layout(height=450, xaxis_title='Rental Price ($)', yaxis_title='Count')
-        st.plotly_chart(fig6, use_container_width=True, config=static_config, key="chart_6")
+        fig6.update_traces(hovertemplate='<b>%{fullData.name}</b><br>Price Range: %{x}<br>Count: %{y:,}<extra></extra>')
+        fig6.update_layout(height=450, xaxis_title='Rental Price ($)', yaxis_title='Count', hoverlabel=dict(font_size=13))
+        st.plotly_chart(fig6, use_container_width=True, config=chart_config, key="chart_6")
 
         col_f1, col_f2 = st.columns(2)
 
@@ -356,8 +418,8 @@ with tab1:
             fig7 = px.violin(df_v7, x='bedrooms_str', y='price', box=True,
                              labels={'bedrooms_str': 'Bedrooms', 'price': 'Price ($)'},
                              color_discrete_sequence=['#636EFA'])
-            fig7.update_layout(height=420)
-            st.plotly_chart(fig7, use_container_width=True, config=static_config, key="chart_7")
+            fig7.update_layout(height=420, hoverlabel=dict(font_size=13))
+            st.plotly_chart(fig7, use_container_width=True, config=chart_config, key="chart_7")
 
         # Chart 8: Box Plot — bathrooms vs. price
         with col_f2:
@@ -365,8 +427,8 @@ with tab1:
             fig8 = px.box(df_filtered, x='bathrooms', y='price',
                           labels={'price': 'Price ($)', 'bathrooms': 'Bathrooms'},
                           color_discrete_sequence=['#EF553B'])
-            fig8.update_layout(height=420)
-            st.plotly_chart(fig8, use_container_width=True, config=static_config, key="chart_8")
+            fig8.update_layout(height=420, hoverlabel=dict(font_size=13))
+            st.plotly_chart(fig8, use_container_width=True, config=chart_config, key="chart_8")
 
         col_f3, col_f4 = st.columns(2)
 
@@ -381,8 +443,9 @@ with tab1:
             fig9 = px.area(agg9, x='sqft_tier', y='price',
                            labels={'price': 'Avg Rent ($)', 'sqft_tier': 'Size Tier'},
                            color_discrete_sequence=['#00CC96'])
-            fig9.update_layout(height=420)
-            st.plotly_chart(fig9, use_container_width=True, config=static_config, key="chart_9")
+            fig9.update_traces(hovertemplate='<b>Tier: %{x}</b><br>Average Rent: $%{y:,.2f}<extra></extra>')
+            fig9.update_layout(height=420, hoverlabel=dict(font_size=13))
+            st.plotly_chart(fig9, use_container_width=True, config=chart_config, key="chart_9")
 
         # Chart 11: Donut Chart — pets_allowed_bin
         with col_f4:
@@ -394,10 +457,11 @@ with tab1:
             fig11 = go.Figure(data=[go.Pie(
                 labels=agg11['Pet Policy'], values=agg11['Count'],
                 hole=0.5, marker_colors=['#EF553B', '#00CC96'],
-                textinfo='percent+label', textposition='inside'
+                textinfo='percent+label', textposition='auto',
+                hovertemplate='<b>Policy: %{label}</b><br>Apartments: %{value:,}<br>Share: %{percent}<extra></extra>'
             )])
-            fig11.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True)
-            st.plotly_chart(fig11, use_container_width=True, config=static_config, key="chart_11")
+            fig11.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True, hoverlabel=dict(font_size=14))
+            st.plotly_chart(fig11, use_container_width=True, config=chart_config, key="chart_11")
 
         # Chart 12: Line Graph (with Markers) — amenities_count vs. price
         st.markdown("##### Amenities Count vs Average Rent (Line Graph)")
@@ -405,8 +469,9 @@ with tab1:
         fig12 = px.line(agg12, x='amenities_count', y='price', markers=True,
                         labels={'amenities_count': 'Amenities Count', 'price': 'Average Price ($)'},
                         color_discrete_sequence=['#FFA15A'])
-        fig12.update_layout(height=420)
-        st.plotly_chart(fig12, use_container_width=True, config=static_config, key="chart_12")
+        fig12.update_traces(hovertemplate='<b>Amenities Count: %{x}</b><br>Average Rent: $%{y:,.2f}<extra></extra>')
+        fig12.update_layout(height=420, hoverlabel=dict(font_size=13))
+        st.plotly_chart(fig12, use_container_width=True, config=chart_config, key="chart_12")
 
     # ═════════════════════════════════════════════
     #  SUB‑TAB 3 — Physical Layout & Floorplan
@@ -424,9 +489,12 @@ with tab1:
             bed_counts5['Bedrooms'] = bed_counts5['Bedrooms'].astype(int).astype(str) + ' Bed'
             fig5_pie = px.pie(bed_counts5, names='Bedrooms', values='Count',
                               color_discrete_sequence=px.colors.qualitative.Pastel1)
-            fig5_pie.update_traces(textinfo='percent+label', textposition='inside', insidetextorientation='horizontal')
-            fig5_pie.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True)
-            st.plotly_chart(fig5_pie, use_container_width=True, config=static_config, key="chart_5")
+            fig5_pie.update_traces(
+                textinfo='percent+label', textposition='auto', insidetextorientation='horizontal',
+                hovertemplate='<b>Category: %{label}</b><br>Count: %{value:,}<br>Percentage: %{percent}<extra></extra>'
+            )
+            fig5_pie.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True, hoverlabel=dict(font_size=14))
+            st.plotly_chart(fig5_pie, use_container_width=True, config=chart_config, key="chart_5")
 
         # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
         with col_l2:
@@ -436,8 +504,9 @@ with tab1:
             fig13 = px.line(top_cities13, x='City', y='Count', markers=True,
                             labels={'City': 'City Name', 'Count': 'Number of Apartments'},
                             color_discrete_sequence=['#AB63FA'])
-            fig13.update_layout(height=450, xaxis_tickangle=-45)
-            st.plotly_chart(fig13, use_container_width=True, config=static_config, key="chart_13")
+            fig13.update_traces(hovertemplate='<b>City: %{x}</b><br>Apartments: %{y:,}<extra></extra>')
+            fig13.update_layout(height=450, xaxis_tickangle=-45, hoverlabel=dict(font_size=13))
+            st.plotly_chart(fig13, use_container_width=True, config=chart_config, key="chart_13")
     
         col_l3, col_l4 = st.columns(2)
 
@@ -452,9 +521,12 @@ with tab1:
             agg16.columns = ['Bedrooms', 'Count']
             fig16 = px.pie(agg16, names='Bedrooms', values='Count',
                            color_discrete_sequence=px.colors.qualitative.Set2)
-            fig16.update_traces(textinfo='percent+label', textposition='inside', insidetextorientation='horizontal')
-            fig16.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True)
-            st.plotly_chart(fig16, use_container_width=True, config=static_config, key="chart_16")
+            fig16.update_traces(
+                textinfo='percent+label', textposition='auto', insidetextorientation='horizontal',
+                hovertemplate='<b>Category: %{label}</b><br>Count: %{value:,}<br>Share: %{percent}<extra></extra>'
+            )
+            fig16.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True, hoverlabel=dict(font_size=14))
+            st.plotly_chart(fig16, use_container_width=True, config=chart_config, key="chart_16")
 
         # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
         with col_l4:
@@ -487,12 +559,14 @@ with tab1:
                     name=f'{int(bed)} Bed',
                     line_color=radar_colors[idx % len(radar_colors)],
                     opacity=0.7,
+                    hovertemplate='<b>%{fullData.name}</b><br>Attribute: %{theta}<br>Normalized Value: %{r:.2f}<extra></extra>'
                 ))
             fig17.update_layout(
                 height=420,
                 polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+                hoverlabel=dict(font_size=13)
             )
-            st.plotly_chart(fig17, use_container_width=True, config=static_config, key="chart_17")
+            st.plotly_chart(fig17, use_container_width=True, config=chart_config, key="chart_17")
 
 
 # ═══════════════════════════════════════════════
@@ -521,8 +595,8 @@ with tab2:
     fig_multi = px.bar(df_melt, x='Model', y='Value', color='Metric', barmode='group',
                        text_auto='.2f',
                        color_discrete_sequence=['#636EFA', '#EF553B', '#00CC96'])
-    fig_multi.update_layout(height=450, yaxis_title="Score / Error")
-    st.plotly_chart(fig_multi, use_container_width=True, config=static_config, key="chart_tab2_multi")
+    fig_multi.update_layout(height=450, yaxis_title="Score / Error", hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_multi, use_container_width=True, config=chart_config, key="chart_tab2_multi")
 
     st.divider()
 
@@ -541,24 +615,26 @@ with tab2:
     cls_rows = []
     for name, info in models_dict.items():
         labels, yt_bin, yp_bin, _ = price_quartile_metrics(info['y_test'], info['y_pred'], global_edges=global_q_edges)
+        _, w_auc = compute_quartile_roc_auc(info['y_test'], info['y_pred'], global_edges=global_q_edges)
         cls_rows.append({
             'Model': name,
             'Accuracy': round(accuracy_score(yt_bin, yp_bin), 4),
             'Precision (Weighted)': round(precision_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
             'Recall (Weighted)': round(recall_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
             'F1 Score (Weighted)': round(f1_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
+            'ROC-AUC (Weighted)': round(w_auc, 4),
         })
     df_cls = pd.DataFrame(cls_rows)
     st.dataframe(df_cls, use_container_width=True, hide_index=True)
 
     # Grouped Bar Chart comparing Classification Metrics across models
     st.markdown("#### Model Classification Performance Comparison")
-    df_cls_melt = df_cls.melt(id_vars=['Model'], value_vars=['Accuracy', 'F1 Score (Weighted)'],
+    df_cls_melt = df_cls.melt(id_vars=['Model'], value_vars=['Accuracy', 'F1 Score (Weighted)', 'ROC-AUC (Weighted)'],
                               var_name='Metric', value_name='Score')
     fig_cls_bar = px.bar(df_cls_melt, x='Model', y='Score', color='Metric', barmode='group',
-                         text_auto='.4f', color_discrete_sequence=['#636EFA', '#00CC96'])
-    fig_cls_bar.update_layout(height=420, yaxis_range=[0, 1.0], yaxis_title="Score")
-    st.plotly_chart(fig_cls_bar, use_container_width=True, config=static_config, key="chart_tab2_cls_bar")
+                         text_auto='.4f', color_discrete_sequence=['#636EFA', '#00CC96', '#AB63FA'])
+    fig_cls_bar.update_layout(height=420, yaxis_range=[0, 1.05], yaxis_title="Score", hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_cls_bar, use_container_width=True, config=chart_config, key="chart_tab2_cls_bar")
 
     st.divider()
 
@@ -568,6 +644,7 @@ with tab2:
 
     info = models_dict[model_choice]
     labels, yt_bin, yp_bin, q_edges = price_quartile_metrics(info['y_test'], info['y_pred'], global_edges=global_q_edges)
+    roc_data, model_w_auc = compute_quartile_roc_auc(info['y_test'], info['y_pred'], global_edges=global_q_edges)
 
     # Actual vs Predicted Scatter
     st.markdown("#### Actual vs Predicted Price Scatter Plot")
@@ -583,8 +660,8 @@ with tab2:
     fig_ap.add_trace(go.Scatter(x=[line_min, line_max], y=[line_min, line_max],
                                 mode='lines', name='Perfect Prediction',
                                 line=dict(color='red', dash='dash')))
-    fig_ap.update_layout(height=500)
-    st.plotly_chart(fig_ap, use_container_width=True, config=static_config, key="chart_tab2_scatter")
+    fig_ap.update_layout(height=500, hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_ap, use_container_width=True, config=chart_config, key="chart_tab2_scatter")
 
     # Class‑level metrics table
     st.markdown("#### Class‑Level Metrics (per Price Quartile)")
@@ -593,33 +670,36 @@ with tab2:
     for lbl in labels:
         if lbl in report:
             r = report[lbl]
+            class_auc_val = roc_data.get(lbl, {}).get('auc', 0.5)
             class_rows.append({
                 'Price Range': lbl,
                 'Accuracy': round(accuracy_score(yt_bin == lbl, yp_bin == lbl), 4),
                 'Precision': round(r['precision'], 4),
                 'Recall': round(r['recall'], 4),
                 'F1 Score': round(r['f1-score'], 4),
+                'ROC-AUC': round(class_auc_val, 4),
             })
     df_class = pd.DataFrame(class_rows)
     st.dataframe(df_class, use_container_width=True, hide_index=True)
 
     # Class-Level Performance Bar Chart
-    df_class_melt = df_class.melt(id_vars=['Price Range'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1 Score'],
+    df_class_melt = df_class.melt(id_vars=['Price Range'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1 Score', 'ROC-AUC'],
                                   var_name='Metric', value_name='Score')
     fig_class_bar = px.bar(df_class_melt, x='Price Range', y='Score', color='Metric', barmode='group',
-                           text_auto='.4f', color_discrete_sequence=['#AB63FA', '#FFA15A', '#19D3F3', '#FF6692'],
+                           text_auto='.4f', color_discrete_sequence=['#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#00CC96'],
                            title=f"Quartile Performance Breakdown — {model_choice}")
-    fig_class_bar.update_layout(height=420, yaxis_range=[0, 1.0], yaxis_title="Score")
-    st.plotly_chart(fig_class_bar, use_container_width=True, config=static_config, key="chart_tab2_class_bar")
+    fig_class_bar.update_layout(height=420, yaxis_range=[0, 1.05], yaxis_title="Score", hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_class_bar, use_container_width=True, config=chart_config, key="chart_tab2_class_bar")
 
+    
     # Confusion Matrix
     st.markdown("#### Confusion Matrix")
     cm = confusion_matrix(yt_bin, yp_bin, labels=labels)
     fig_cm = px.imshow(cm, x=labels, y=labels, text_auto=True, aspect='auto',
                        color_continuous_scale='Blues',
                        labels={'x': 'Predicted Quartile', 'y': 'Actual Quartile', 'color': 'Count'})
-    fig_cm.update_layout(height=500)
-    st.plotly_chart(fig_cm, use_container_width=True, config=static_config, key="chart_tab2_cm")
+    fig_cm.update_layout(height=500, hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_cm, use_container_width=True, config=chart_config, key="chart_tab2_cm")
 
 
 # ═══════════════════════════════════════════════
@@ -636,11 +716,9 @@ with tab3:
     q_edges_full = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
     q_labels_full = _make_labels(np.unique(q_edges_full))
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("Total Records", f"{len(df_explore):,}")
     c2.metric("Input Features", num_features)
-    c3.metric("Price Classes (Quartiles)", len(q_labels_full))
-    c4.metric("Target Variable", "price")
 
     st.divider()
 
