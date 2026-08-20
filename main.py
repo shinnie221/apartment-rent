@@ -654,49 +654,49 @@ with tab2:
     fig_ap = px.scatter(df_scatter, x='Actual', y='Predicted', opacity=0.35,
                         labels={'Actual': 'Actual Price ($)', 'Predicted': 'Predicted Price ($)'},
                         color_discrete_sequence=['#AB63FA'])
-# Residual Plot
-st.markdown("#### Residual Plot")
-df_residual = pd.DataFrame({
-    'Predicted': info['y_pred'],
-    'Residual': np.array(info['y_test']) - np.array(info['y_pred'])
-})
-
-fig_res = px.scatter(
-    df_residual,
-    x='Predicted',
-    y='Residual',
-    opacity=0.35,
-    labels={
-        'Predicted': 'Predicted Price ($)',
-        'Residual': 'Residual ($)'
-    }
-)
-
-# Zero residual line
-line_min = df_residual['Predicted'].min()
-line_max = df_residual['Predicted'].max()
-
-fig_res.add_trace(
-    go.Scatter(
-        x=[line_min, line_max],
-        y=[0, 0],
-        mode='lines',
-        name='Zero Residual',
-        line=dict(color='red', dash='dash')
+    # Residual Plot
+    st.markdown("#### Residual Plot")
+    df_residual = pd.DataFrame({
+        'Predicted': info['y_pred'],
+        'Residual': np.array(info['y_test']) - np.array(info['y_pred'])
+    })
+    
+    fig_res = px.scatter(
+        df_residual,
+        x='Predicted',
+        y='Residual',
+        opacity=0.35,
+        labels={
+            'Predicted': 'Predicted Price ($)',
+            'Residual': 'Residual ($)'
+        }
     )
-)
-
-fig_res.update_layout(
-    height=500,
-    hoverlabel=dict(font_size=13)
-)
-
-st.plotly_chart(
-    fig_res,
-    use_container_width=True,
-    config=chart_config,
-    key="chart_tab2_residual"
-)
+    
+    # Zero residual line
+    line_min = df_residual['Predicted'].min()
+    line_max = df_residual['Predicted'].max()
+    
+    fig_res.add_trace(
+        go.Scatter(
+            x=[line_min, line_max],
+            y=[0, 0],
+            mode='lines',
+            name='Zero Residual',
+            line=dict(color='red', dash='dash')
+        )
+    )
+    
+    fig_res.update_layout(
+        height=500,
+        hoverlabel=dict(font_size=13)
+    )
+    
+    st.plotly_chart(
+        fig_res,
+        use_container_width=True,
+        config=chart_config,
+        key="chart_tab2_residual"
+    )
     
     # Perfect prediction line
     line_min = min(df_scatter['Actual'].min(), df_scatter['Predicted'].min())
