@@ -1077,7 +1077,6 @@ with tab3:
         # Price quartile labels for display
         q_edges_full = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
         q_labels_full = _make_labels(np.unique(q_edges_full))
-        c_t3.metric("Price Quartiles", len(q_labels_full))
 
         st.divider()
 

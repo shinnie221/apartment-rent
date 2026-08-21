@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from .pipeline import preprocess_data
 
-def train_model(df, n_neighbors=7, max_eval_samples=3000):
+def train_model(df, max_eval_samples=3000):
     df_processed = preprocess_data(df)
     
     feature_cols = [
@@ -30,8 +30,49 @@ def train_model(df, n_neighbors=7, max_eval_samples=3000):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = KNeighborsRegressor(n_neighbors=n_neighbors, weights='distance', algorithm='kd_tree', n_jobs=-1)
+    # ── GridSearchCV for KNN ──
+    # Subsample training data for faster CV if dataset is large
+    if len(X_train_scaled) > 15000:
+        np.random.seed(42)
+        subsample_idx = np.random.choice(len(X_train_scaled), size=15000, replace=False)
+        X_train_cv = X_train_scaled[subsample_idx]
+        y_train_cv = y_train_log.iloc[subsample_idx]
+    else:
+        X_train_cv = X_train_scaled
+        y_train_cv = y_train_log
+    
+    param_grid = {
+        'n_neighbors': [3, 5, 7, 9, 11, 15],
+        'weights': ['uniform', 'distance'],
+        'metric': ['euclidean', 'manhattan'],
+    }
+    
+    grid_search = GridSearchCV(
+        estimator=KNeighborsRegressor(algorithm='auto', n_jobs=-1),
+        param_grid=param_grid,
+        cv=3,
+        scoring='neg_mean_squared_error',
+        n_jobs=-1,
+        return_train_score=True
+    )
+    grid_search.fit(X_train_cv, y_train_cv)
+    
+    best_params = grid_search.best_params_
+    print(f"[KNN Regressor] Best Hyperparameters: {best_params}")
+    
+    # Refit best model on full training data
+    model = KNeighborsRegressor(
+        n_neighbors=best_params['n_neighbors'],
+        weights=best_params['weights'],
+        metric=best_params['metric'],
+        algorithm='auto',
+        n_jobs=-1
+    )
     model.fit(X_train_scaled, y_train_log)
+    
+    # Store best params on model for reporting
+    model.best_params_ = best_params
+    model.cv_results_summary_ = grid_search.cv_results_
     
     # Subsample test set for fast metrics calculation if test set is large
     if len(X_test_scaled) > max_eval_samples:

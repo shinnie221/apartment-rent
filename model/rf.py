@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from .pipeline import preprocess_data
 
-def train_model(df, n_estimators=100, max_depth=20, max_samples=0.8):
+def train_model(df):
     df_processed = preprocess_data(df)
     
     feature_cols = [
@@ -30,14 +30,33 @@ def train_model(df, n_estimators=100, max_depth=20, max_samples=0.8):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    model = RandomForestRegressor(
-        random_state=42, 
-        n_estimators=n_estimators, #100
-        max_depth=max_depth, #20
-        max_samples=max_samples, #0.8
-        n_jobs=-1
+    # ── RandomizedSearchCV for Random Forest ──
+    param_distributions = {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [10, 15, 20, 25, None],
+        'min_samples_leaf': [1, 5, 10],
+        'max_features': ['sqrt', 'log2', 0.5],
+        'max_samples': [0.6, 0.8, 1.0],
+    }
+    
+    random_search = RandomizedSearchCV(
+        estimator=RandomForestRegressor(random_state=42, n_jobs=-1),
+        param_distributions=param_distributions,
+        n_iter=20,
+        cv=3,
+        scoring='neg_mean_squared_error',
+        random_state=42,
+        n_jobs=-1,
+        return_train_score=True
     )
-    model.fit(X_train_scaled, y_train_log)
+    random_search.fit(X_train_scaled, y_train_log)
+    
+    model = random_search.best_estimator_
+    print(f"[Random Forest] Best Hyperparameters: {random_search.best_params_}")
+    
+    # Store best params on model for reporting
+    model.best_params_ = random_search.best_params_
+    model.cv_results_summary_ = random_search.cv_results_
     
     y_pred_log = model.predict(X_test_scaled)
     y_pred = np.maximum(0.0, np.expm1(y_pred_log))

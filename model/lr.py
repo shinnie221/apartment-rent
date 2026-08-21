@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from .pipeline import preprocess_data
 
@@ -35,9 +35,27 @@ def train_model(df):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
     
-    # Train model on log target
-    model = LinearRegression(n_jobs=-1)
-    model.fit(X_train_scaled, y_train_log)
+    # ── GridSearchCV for Ridge regression ──
+    param_grid = {
+        'alpha': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+    }
+    
+    grid_search = GridSearchCV(
+        estimator=Ridge(),
+        param_grid=param_grid,
+        cv=3,
+        scoring='neg_mean_squared_error',
+        n_jobs=-1,
+        return_train_score=True
+    )
+    grid_search.fit(X_train_scaled, y_train_log)
+    
+    model = grid_search.best_estimator_
+    print(f"[Linear Regression (Ridge)] Best Hyperparameters: {grid_search.best_params_}")
+    
+    # Store best params on model for reporting
+    model.best_params_ = grid_search.best_params_
+    model.cv_results_summary_ = grid_search.cv_results_
     
     # Predict on test and transform back to USD scale
     y_pred_log = model.predict(X_test_scaled)
