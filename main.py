@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -19,14 +20,190 @@ from model.knn import train_model as train_knn, predict_property as predict_knn
 from model.dt import train_model as train_dt, predict_property as predict_dt
 from model.rf import train_model as train_rf, predict_property as predict_rf
 
+# ──────────────────────────────────────────────
+#  SECTION 1: LOAD RAW DATASET & MISSING VALUE ANALYSIS
+# ──────────────────────────────────────────────
+def analyze_raw_dataset(raw_file='apartments_for_rent_classified_100K.csv'):
+    """Load raw dataset, inspect shape, and perform missing value analysis."""
+    df_raw = pd.read_csv(raw_file, sep=';', encoding='latin-1', low_memory=False)
+
+    print("=" * 60)
+    print("SECTION 1: RAW DATASET MISSING VALUE ANALYSIS")
+    print("=" * 60)
+    print(f"Dataset Shape: {df_raw.shape[0]:,} rows and {df_raw.shape[1]} columns\n")
+    print(df_raw[['id', 'category', 'title', 'price', 'bedrooms', 'bathrooms',
+                   'square_feet', 'cityname', 'state']].head(3))
+
+    total_rows = len(df_raw)
+    print(f"\nTotal Rows in Raw Dataset: {total_rows:,}\n")
+
+    # Compute missing values and percentages
+    missing_count = df_raw.isnull().sum()
+    missing_percent = (missing_count / total_rows) * 100
+    missing_summary = pd.DataFrame({
+        'Missing Count': missing_count,
+        'Percentage (%)': missing_percent
+    })
+    missing_summary = missing_summary[missing_summary['Missing Count'] > 0].sort_values(
+        by='Missing Count', ascending=False
+    )
+    for column, row in missing_summary.iterrows():
+        print(f"{column}: {int(row['Missing Count']):,} missing entries ({row['Percentage (%)']:.2f}% missing)")
+
+    return df_raw
+
+
+# ──────────────────────────────────────────────
+#  SECTION 2: DATA CLEANING & PREPROCESSING
+# ──────────────────────────────────────────────
+def clean_apartment_dataset(df_raw):
+    """
+    Clean raw dataset: remove duplicates, strip whitespace,
+    impute all missing values. Preserves all original columns.
+    """
+    print("\n" + "=" * 60)
+    print("SECTION 2: EXECUTING PREPROCESSING PIPELINE")
+    print("=" * 60)
+
+    # 1. Remove exact duplicate rows
+    df_clean = df_raw.drop_duplicates().copy()
+    print(f"Rows after removing exact duplicates: {len(df_clean):,}")
+
+    # 2. Strip leading/trailing whitespaces from object/string columns
+    string_cols = df_clean.select_dtypes(include=["object"]).columns
+    for col in string_cols:
+        df_clean[col] = df_clean[col].astype(str).str.strip()
+
+    # 3. Handle Missing Values without dropping any column
+    df_clean["amenities"] = df_clean["amenities"].fillna("None").replace(["nan", ""], "None")
+    df_clean["pets_allowed"] = df_clean["pets_allowed"].fillna("None").replace(["nan", ""], "None")
+    df_clean["address"] = df_clean["address"].fillna("Not Specified").replace(["nan", ""], "Not Specified")
+    df_clean["cityname"] = df_clean["cityname"].fillna("Unknown").replace(["nan", ""], "Unknown")
+    df_clean["state"] = df_clean["state"].fillna("Unknown").replace(["nan", ""], "Unknown")
+
+    # Numeric Imputations — Price & Price Display
+    if df_clean["price"].isnull().sum() > 0:
+        median_price = df_clean["price"].median()
+        df_clean["price"] = df_clean["price"].fillna(median_price)
+
+    df_clean["price_display"] = df_clean["price_display"].fillna(
+        df_clean["price"].apply(lambda x: f"${x:,.0f}")
+    ).replace(["nan", ""], "$0")
+
+    # Bedrooms & Bathrooms
+    df_clean["bedrooms"] = df_clean["bedrooms"].fillna(df_clean["bedrooms"].median()).astype(int)
+    df_clean["bathrooms"] = df_clean["bathrooms"].fillna(df_clean["bathrooms"].median()).astype(float)
+
+    # Square Feet
+    df_clean["square_feet"] = df_clean["square_feet"].fillna(df_clean["square_feet"].median()).astype(int)
+
+    # Coordinates (Impute by state median first, fallback to overall median)
+    df_clean["latitude"] = df_clean.groupby("state")["latitude"].transform(lambda x: x.fillna(x.median()))
+    df_clean["latitude"] = df_clean["latitude"].fillna(df_clean["latitude"].median())
+
+    df_clean["longitude"] = df_clean.groupby("state")["longitude"].transform(lambda x: x.fillna(x.median()))
+    df_clean["longitude"] = df_clean["longitude"].fillna(df_clean["longitude"].median())
+
+    # 4. Verify no null values remain
+    remaining_nulls = df_clean.isnull().sum().sum()
+    print(f"Total missing values remaining: {remaining_nulls}")
+    print(f"Cleaned Shape: {df_clean.shape[0]:,} rows, {df_clean.shape[1]} columns")
+
+    return df_clean
+
+
+# ──────────────────────────────────────────────
+#  SECTION 3: FEATURE ENGINEERING & PREPARATION
+# ──────────────────────────────────────────────
+def prepare_apartment_dataset(df_clean):
+    """
+    Engineer features (amenities_count, pets_allowed_bin) and
+    select only the modeling columns for the final prepared dataset.
+    """
+    print("\n" + "=" * 60)
+    print("SECTION 3: FEATURE ENGINEERING & PREPARATION")
+    print("=" * 60)
+
+    # Feature Engineering: Create 'amenities_count'
+    def count_amenities(x):
+        if pd.isna(x) or str(x).strip().lower() in ["none", "nan", ""]:
+            return 0
+        return len(str(x).split(","))
+
+    df_clean["amenities_count"] = df_clean["amenities"].apply(count_amenities)
+
+    # Feature Engineering: Create 'pets_allowed_bin'
+    def has_pets(x):
+        if pd.isna(x) or str(x).strip().lower() in ["none", "nan", ""]:
+            return 0
+        return 1
+
+    df_clean["pets_allowed_bin"] = df_clean["pets_allowed"].apply(has_pets)
+
+    # Calculate counts and percentages
+    count = df_clean["pets_allowed_bin"].value_counts()
+    percentage = df_clean["pets_allowed_bin"].value_counts(normalize=True) * 100
+    print(f"Group 1 (Pets Allowed): {count[1]:,} properties ({percentage[1]:.2f}%)")
+    print(f"Group 0 (No Pets / Unspecified): {count[0]:,} properties ({percentage[0]:.2f}%)")
+
+    # Feature Selection: Retain only modeling columns
+    cols_to_keep = [
+        "price",            # Continuous rent price
+        "bedrooms",         # Structural feature
+        "bathrooms",        # Structural feature
+        "square_feet",      # Structural feature
+        "amenities_count",  # Engineered amenity feature
+        "pets_allowed_bin", # Engineered pet feature
+        "state",            # Location feature
+        "cityname",         # Location feature
+        "latitude",         # Coordinate feature
+        "longitude",        # Coordinate feature
+    ]
+
+    df_prepared = df_clean[cols_to_keep].copy()
+    print(f"Final Prepared Shape: {df_prepared.shape[0]:,} rows, {df_prepared.shape[1]} columns\n")
+
+    return df_prepared
+
+
+# ──────────────────────────────────────────────
+#  COMBINED PIPELINE: RAW → CLEAN → PREPARE → SAVE
+# ──────────────────────────────────────────────
+def run_full_pipeline(raw_file='apartments_for_rent_classified_100K.csv',
+                      output_file='apartments_for_rent_fully_prepared.csv'):
+    """
+    Full pipeline: load raw data → analyze missing values → clean →
+    feature engineer → save single combined CSV.
+    """
+    # Section 1: Load & analyze raw data
+    df_raw = analyze_raw_dataset(raw_file)
+
+    # Section 2: Clean missing values
+    df_cleaned = clean_apartment_dataset(df_raw)
+
+    # Section 3: Feature engineering & column selection
+    df_prepared = prepare_apartment_dataset(df_cleaned)
+
+    # Save final prepared dataset
+    df_prepared.to_csv(output_file, index=False)
+    print(f"✅ Fully prepared dataset saved to: {output_file}")
+
+    return df_prepared
+
 
 # ──────────────────────────────────────────────
 #  DATA LOADING & MODEL TRAINING (cached)
 # ──────────────────────────────────────────────
 @st.cache_data
 def load_data():
+    prepared_file = "apartments_for_rent_fully_prepared.csv"
+    raw_file = "apartments_for_rent_classified_100K.csv"
     try:
-        df = pd.read_csv("apartments_for_rent_fully_prepared.csv")
+        # If prepared file doesn't exist yet, run the full pipeline from raw
+        if not os.path.exists(prepared_file) and os.path.exists(raw_file):
+            run_full_pipeline(raw_file, prepared_file)
+
+        df = pd.read_csv(prepared_file)
         if 'price' in df.columns:
             df['price'] = pd.to_numeric(df['price'], errors='coerce')
         return df
@@ -289,7 +466,6 @@ static_config = chart_config
 # ═══════════════════════════════════════════════
 with tab1:
     st.header("Visualisation Dashboard")
-    st.caption(f"All charts reflect current sidebar filters ({len(df_filtered):,} records). Hover over any chart segment to view detailed labels.")
 
     subtab_loc, subtab_feat, subtab_layout = st.tabs([
         "Location & Geographic",
@@ -602,8 +778,8 @@ with tab2:
 
     # ── 2c. Classification Metrics (Price Quartiles) ─────────
     st.subheader("Classification Metrics on Price Quartiles")
-    st.caption("Prices are split into 4 equal‑frequency quartiles (25 % each). "
-               "Predicted prices are binned with identical global quartile edges to accurately compare model classification performance.")
+    st.caption("Prices are divided into 4 equal groups, with 25% of the data in each group."
+               "Predicted prices use the same price ranges so they can be fairly compared with the actual prices.")
 
     # Calculate global uniform quartile edges from overall dataset
     global_q_edges = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
@@ -753,15 +929,6 @@ with tab2:
         config=chart_config,
         key="chart_tab2_residual"
     )
-        
-    # Perfect prediction line
-    line_min = min(df_scatter['Actual'].min(), df_scatter['Predicted'].min())
-    line_max = max(df_scatter['Actual'].max(), df_scatter['Predicted'].max())
-    fig_ap.add_trace(go.Scatter(x=[line_min, line_max], y=[line_min, line_max],
-                                mode='lines', name='Perfect Prediction',
-                                line=dict(color='red', dash='dash')))
-    fig_ap.update_layout(height=500, hoverlabel=dict(font_size=13))
-    st.plotly_chart(fig_ap, use_container_width=True, config=chart_config, key="chart_tab2_scatter")
 
     # Class‑level metrics table
     st.markdown("#### Class‑Level Metrics (per Price Quartile)")
@@ -808,35 +975,145 @@ with tab2:
 with tab3:
     st.header("Data Explorer")
 
-    # KPI cards
-    feature_cols_display = ['bedrooms', 'bathrooms', 'square_feet', 'amenities_count', 'pets_allowed_bin', 'state']
-    num_features = len(feature_cols_display)
+    subtab_raw, subtab_cleaned, subtab_transformed = st.tabs([
+        "Raw Dataset",
+        "Cleaned Dataset",
+        "Data Transformed",
+    ])
 
-    # Price quartile labels for display
-    q_edges_full = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
-    q_labels_full = _make_labels(np.unique(q_edges_full))
+    # ── Sub-tab 1: Raw Dataset ────────────────────────
+    with subtab_raw:
+        st.subheader("Raw Dataset")
+        if os.path.exists("apartments_for_rent_classified_100K.csv"):
+            @st.cache_data
+            def load_raw_dataset():
+                return pd.read_csv("apartments_for_rent_classified_100K.csv",
+                                   sep=';', encoding='latin-1', low_memory=False)
+            df_raw_preview = load_raw_dataset()
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Records", f"{len(df_explore):,}")
-    c2.metric("Input Features", num_features)
+            c_r1, c_r2, c_r3 = st.columns(3)
+            c_r1.metric("Total Rows", f"{len(df_raw_preview):,}")
+            c_r2.metric("Total Columns", df_raw_preview.shape[1])
 
-    st.divider()
+            st.divider()
 
-    # Price quartile breakdown
-    st.subheader("Price Quartile Breakdown")
-    df_q = df_explore.copy()
-    df_q['Price Class'] = pd.cut(df_q['price'], bins=np.unique(q_edges_full),
-                                  labels=q_labels_full, include_lowest=True)
-    class_counts = df_q['Price Class'].value_counts().reset_index()
-    class_counts.columns = ['Price Class', 'Count']
-    st.dataframe(class_counts, use_container_width=True, hide_index=True)
+            # Missing value analysis
+            st.markdown("##### Missing Value Analysis")
+            total_rows_raw = len(df_raw_preview)
+            missing_count = df_raw_preview.isnull().sum()
+            missing_pct = (missing_count / total_rows_raw) * 100
+            missing_df = pd.DataFrame({
+                'Column': missing_count.index,
+                'Missing Count': missing_count.values,
+                'Percentage (%)': missing_pct.values.round(2)
+            })
+            missing_df = missing_df[missing_df['Missing Count'] > 0].sort_values(
+                by='Missing Count', ascending=False
+            ).reset_index(drop=True)
+            if len(missing_df) > 0:
+                st.dataframe(missing_df, use_container_width=True, hide_index=True)
+            else:
+                st.success("No missing values found in the raw dataset.")
 
-    st.divider()
+            st.divider()
 
-    # Dataset preview
-    st.subheader("Dataset Preview")
-    preview_n = st.slider("Number of rows to display", min_value=5, max_value=100, value=20, step=5)
-    st.dataframe(df_explore.head(preview_n), use_container_width=True, hide_index=True)
+            # Data preview
+            st.markdown("##### Dataset Preview")
+            raw_n = st.slider("Number of rows to display", min_value=5, max_value=100,
+                              value=10, step=5, key="raw_preview_n")
+            st.dataframe(df_raw_preview.head(raw_n), use_container_width=True, hide_index=True)
+        else:
+            st.info("Raw file `apartments_for_rent_classified_100K.csv` not found in workspace directory.")
+
+    # ── Sub-tab 2: Cleaned Dataset ────────────────────
+    with subtab_cleaned:
+        st.subheader("Cleaned Dataset")
+        st.caption("This view shows the dataset after duplicate removal, whitespace stripping, and missing value imputation.")
+
+        if os.path.exists("apartments_for_rent_classified_100K.csv"):
+            @st.cache_data
+            def load_cleaned_dataset():
+                df_raw = pd.read_csv("apartments_for_rent_classified_100K.csv",
+                                     sep=';', encoding='latin-1', low_memory=False)
+                return clean_apartment_dataset(df_raw)
+            df_cleaned_preview = load_cleaned_dataset()
+
+            c_c1, c_c2 = st.columns(2)
+            c_c1.metric("Total Rows", f"{len(df_cleaned_preview):,}")
+            c_c2.metric("Total Columns", df_cleaned_preview.shape[1])
+
+            st.divider()
+
+            # Show columns and dtypes
+            st.markdown("##### Column Overview")
+            col_info = pd.DataFrame({
+                'Column': df_cleaned_preview.columns,
+                'Data Type': df_cleaned_preview.dtypes.astype(str).values,
+                'Non-Null Count': df_cleaned_preview.notnull().sum().values,
+                'Null Count': df_cleaned_preview.isnull().sum().values,
+            }).reset_index(drop=True)
+            st.dataframe(col_info, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # Data preview
+            st.markdown("##### Dataset Preview")
+            clean_n = st.slider("Number of rows to display", min_value=5, max_value=100,
+                                value=10, step=5, key="clean_preview_n")
+            st.dataframe(df_cleaned_preview.head(clean_n), use_container_width=True, hide_index=True)
+        else:
+            st.info("Raw file `apartments_for_rent_classified_100K.csv` not found. "
+                    "Cannot generate the cleaned dataset preview.")
+
+    # ── Sub-tab 3: Data Transformed ───────────────────
+    with subtab_transformed:
+        st.subheader("Data Transformed")
+        st.caption("This is the final dataset which added `amenities_count` (number of amenities per listing) and `pets_allowed_bin` (1 = pets allowed, 0 = no pets).")
+
+        c_t1, c_t2, c_t3 = st.columns(3)
+        c_t1.metric("Total Rows", f"{len(df_explore):,}")
+        c_t2.metric("Total Columns", df_explore.shape[1])
+
+        # Price quartile labels for display
+        q_edges_full = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
+        q_labels_full = _make_labels(np.unique(q_edges_full))
+        c_t3.metric("Price Quartiles", len(q_labels_full))
+
+        st.divider()
+
+        # Engineered features summary
+        st.markdown("Columns Added After Data Transformation")
+        col_eng1, col_eng2 = st.columns(2)
+        with col_eng1:
+            st.markdown("**amenities_count** — Number of amenities per listing")
+            amen_stats = df_explore['amenities_count'].describe().round(2)
+            st.dataframe(amen_stats.to_frame("amenities_count"), use_container_width=True)
+        with col_eng2:
+            st.markdown("**pets_allowed_bin** — Pet policy binary flag")
+            pet_counts = df_explore['pets_allowed_bin'].value_counts().reset_index()
+            pet_counts.columns = ['Value', 'Count']
+            pet_counts['Label'] = pet_counts['Value'].map({0: 'No Pets / Unspecified', 1: 'Pets Allowed'})
+            pet_counts['Percentage'] = (pet_counts['Count'] / pet_counts['Count'].sum() * 100).round(2)
+            st.dataframe(pet_counts[['Label', 'Count', 'Percentage']], use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # Price quartile breakdown
+        st.markdown("##### Price Quartile Breakdown")
+        df_q = df_explore.copy()
+        df_q['Price Class'] = pd.cut(df_q['price'], bins=np.unique(q_edges_full),
+                                      labels=q_labels_full, include_lowest=True)
+        class_counts = df_q['Price Class'].value_counts().reset_index()
+        class_counts.columns = ['Price Class', 'Count']
+        st.dataframe(class_counts, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # Data preview
+        st.markdown("##### Dataset Preview")
+        trans_n = st.slider("Number of rows to display", min_value=5, max_value=100,
+                            value=20, step=5, key="trans_preview_n")
+        st.dataframe(df_explore.head(trans_n), use_container_width=True, hide_index=True)
 
 # ═══════════════════════════════════════════════
 #  TAB 4 — PRICE PREDICTOR

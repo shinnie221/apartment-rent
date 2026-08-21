@@ -32,9 +32,9 @@ def train_model(df, n_estimators=100, max_depth=20, max_samples=0.8):
     
     model = RandomForestRegressor(
         random_state=42, 
-        n_estimators=n_estimators, 
-        max_depth=max_depth, 
-        max_samples=max_samples,
+        n_estimators=n_estimators, #100
+        max_depth=max_depth, #20
+        max_samples=max_samples, #0.8
         n_jobs=-1
     )
     model.fit(X_train_scaled, y_train_log)
@@ -50,11 +50,7 @@ def train_model(df, n_estimators=100, max_depth=20, max_samples=0.8):
     return model, scaler, feature_cols, mae, rmse, r2, y_test, y_pred
 
 def predict_property(model, scaler, feature_names, input_data):
-    """
-    input_data should be a dict like:
-    {'bedrooms': 2, 'bathrooms': 1, 'pets_allowed_bin': 1, 'amenities_count': 3, 'square_feet': 1000, 'state': 'CA'}
-    Returns the predicted monthly rental price in USD.
-    """
+
     df_in = pd.DataFrame([input_data])
     X_in = pd.DataFrame(0.0, index=np.arange(1), columns=feature_names)
     
