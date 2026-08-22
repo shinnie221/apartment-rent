@@ -900,7 +900,7 @@ with tab2:
             'Predicted': 'Predicted Price ($)',
             'Residual': 'Residual ($)'
         },
-        color_discrete_sequence=['#AB63FA']
+        color_discrete_sequence=['#FA63CD']
     )
     
     # Zero residual line
