@@ -798,8 +798,16 @@ with tab2:
         x='Predicted',
         y='Residual',
         opacity=0.35,
+<<<<<<< HEAD
         labels={'Predicted': 'Predicted Price ($)', 'Residual': 'Residual ($)'},
         color_discrete_sequence=['#AB63FA']
+=======
+        labels={
+            'Predicted': 'Predicted Price ($)',
+            'Residual': 'Residual ($)'
+        },
+        color_discrete_sequence=['#FA63CD']
+>>>>>>> 22d8a33f3859c394c31d71a2381b8717f84dabd6
     )
     line_min_res = df_residual['Predicted'].min()
     line_max_res = df_residual['Predicted'].max()
