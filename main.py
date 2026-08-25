@@ -4,17 +4,16 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.figure_factory as ff
 from sklearn.metrics import (
     accuracy_score, f1_score, precision_score, recall_score,
-    confusion_matrix, classification_report, roc_auc_score, roc_curve, auc
+    confusion_matrix, classification_report
 )
-from sklearn.preprocessing import label_binarize
 
 # Set page config
 st.set_page_config(page_title="Apartment Rental Price Prediction & Valuation System", page_icon="🏢", layout="wide")
 
-# Import models
+# Import shared pipeline & models
+from model.pipeline import prepare_data_and_split, get_training_quartile_edges, FeatureTransformer
 from model.lr import train_model as train_lr, predict_property as predict_lr
 from model.knn import train_model as train_knn, predict_property as predict_knn
 from model.dt import train_model as train_dt, predict_property as predict_dt
@@ -54,15 +53,16 @@ def analyze_raw_dataset(raw_file='apartments_for_rent_classified_100K.csv'):
 
 
 # ──────────────────────────────────────────────
-#  SECTION 2: DATA CLEANING & PREPROCESSING
+#  SECTION 2: DATA CLEANING & PREPROCESSING (WITHOUT GLOBAL NUMERICAL IMPUTATION)
 # ──────────────────────────────────────────────
 def clean_apartment_dataset(df_raw):
     """
-    Clean raw dataset: remove duplicates, strip whitespace,
-    impute all missing values. Preserves all original columns.
+    Clean raw dataset: remove duplicates, strip whitespace, clean text fields.
+    Does NOT globally impute numerical modelling fields (price, bedrooms, bathrooms,
+    square_feet, latitude, longitude) to avoid data leakage before splitting.
     """
     print("\n" + "=" * 60)
-    print("SECTION 2: EXECUTING PREPROCESSING PIPELINE")
+    print("SECTION 2: EXECUTING PREPROCESSING PIPELINE (NO NUMERICAL LEAKAGE)")
     print("=" * 60)
 
     # 1. Remove exact duplicate rows
@@ -74,41 +74,26 @@ def clean_apartment_dataset(df_raw):
     for col in string_cols:
         df_clean[col] = df_clean[col].astype(str).str.strip()
 
-    # 3. Handle Missing Values without dropping any column
+    # 3. Handle Categorical / String Missing Values cleanly
     df_clean["amenities"] = df_clean["amenities"].fillna("None").replace(["nan", ""], "None")
     df_clean["pets_allowed"] = df_clean["pets_allowed"].fillna("None").replace(["nan", ""], "None")
     df_clean["address"] = df_clean["address"].fillna("Not Specified").replace(["nan", ""], "Not Specified")
     df_clean["cityname"] = df_clean["cityname"].fillna("Unknown").replace(["nan", ""], "Unknown")
     df_clean["state"] = df_clean["state"].fillna("Unknown").replace(["nan", ""], "Unknown")
 
-    # Numeric Imputations — Price & Price Display
-    if df_clean["price"].isnull().sum() > 0:
-        median_price = df_clean["price"].median()
-        df_clean["price"] = df_clean["price"].fillna(median_price)
+    # Format price_display string representation without mutating numeric price
+    if "price" in df_clean.columns:
+        df_clean["price"] = pd.to_numeric(df_clean["price"], errors="coerce")
+        df_clean["price_display"] = df_clean["price"].apply(
+            lambda x: f"${x:,.0f}" if pd.notna(x) else "$0"
+        )
 
-    df_clean["price_display"] = df_clean["price_display"].fillna(
-        df_clean["price"].apply(lambda x: f"${x:,.0f}")
-    ).replace(["nan", ""], "$0")
+    # Cast numeric columns cleanly while keeping NaNs intact for training-only imputation
+    for num_col in ["bedrooms", "bathrooms", "square_feet", "latitude", "longitude"]:
+        if num_col in df_clean.columns:
+            df_clean[num_col] = pd.to_numeric(df_clean[num_col], errors="coerce")
 
-    # Bedrooms & Bathrooms
-    df_clean["bedrooms"] = df_clean["bedrooms"].fillna(df_clean["bedrooms"].median()).astype(int)
-    df_clean["bathrooms"] = df_clean["bathrooms"].fillna(df_clean["bathrooms"].median()).astype(float)
-
-    # Square Feet
-    df_clean["square_feet"] = df_clean["square_feet"].fillna(df_clean["square_feet"].median()).astype(int)
-
-    # Coordinates (Impute by state median first, fallback to overall median)
-    df_clean["latitude"] = df_clean.groupby("state")["latitude"].transform(lambda x: x.fillna(x.median()))
-    df_clean["latitude"] = df_clean["latitude"].fillna(df_clean["latitude"].median())
-
-    df_clean["longitude"] = df_clean.groupby("state")["longitude"].transform(lambda x: x.fillna(x.median()))
-    df_clean["longitude"] = df_clean["longitude"].fillna(df_clean["longitude"].median())
-
-    # 4. Verify no null values remain
-    remaining_nulls = df_clean.isnull().sum().sum()
-    print(f"Total missing values remaining: {remaining_nulls}")
     print(f"Cleaned Shape: {df_clean.shape[0]:,} rows, {df_clean.shape[1]} columns")
-
     return df_clean
 
 
@@ -117,7 +102,7 @@ def clean_apartment_dataset(df_raw):
 # ──────────────────────────────────────────────
 def prepare_apartment_dataset(df_clean):
     """
-    Engineer features (amenities_count, pets_allowed_bin) and
+    Engineer base features (amenities_count, pets_allowed_bin) and
     select only the modeling columns for the final prepared dataset.
     """
     print("\n" + "=" * 60)
@@ -139,12 +124,6 @@ def prepare_apartment_dataset(df_clean):
         return 1
 
     df_clean["pets_allowed_bin"] = df_clean["pets_allowed"].apply(has_pets)
-
-    # Calculate counts and percentages
-    count = df_clean["pets_allowed_bin"].value_counts()
-    percentage = df_clean["pets_allowed_bin"].value_counts(normalize=True) * 100
-    print(f"Group 1 (Pets Allowed): {count[1]:,} properties ({percentage[1]:.2f}%)")
-    print(f"Group 0 (No Pets / Unspecified): {count[0]:,} properties ({percentage[0]:.2f}%)")
 
     # Feature Selection: Retain only modeling columns
     cols_to_keep = [
@@ -171,35 +150,23 @@ def prepare_apartment_dataset(df_clean):
 # ──────────────────────────────────────────────
 def run_full_pipeline(raw_file='apartments_for_rent_classified_100K.csv',
                       output_file='apartments_for_rent_fully_prepared.csv'):
-    """
-    Full pipeline: load raw data → analyze missing values → clean →
-    feature engineer → save single combined CSV.
-    """
-    # Section 1: Load & analyze raw data
+    """Full pipeline: load raw data → analyze missing values → clean → feature engineer → save CSV."""
     df_raw = analyze_raw_dataset(raw_file)
-
-    # Section 2: Clean missing values
     df_cleaned = clean_apartment_dataset(df_raw)
-
-    # Section 3: Feature engineering & column selection
     df_prepared = prepare_apartment_dataset(df_cleaned)
-
-    # Save final prepared dataset
     df_prepared.to_csv(output_file, index=False)
     print(f"✅ Fully prepared dataset saved to: {output_file}")
-
     return df_prepared
 
 
 # ──────────────────────────────────────────────
-#  DATA LOADING & MODEL TRAINING (cached)
+#  DATA LOADING & SHARED MODEL TRAINING (cached)
 # ──────────────────────────────────────────────
 @st.cache_data
 def load_data():
     prepared_file = "apartments_for_rent_fully_prepared.csv"
     raw_file = "apartments_for_rent_classified_100K.csv"
     try:
-        # If prepared file doesn't exist yet, run the full pipeline from raw
         if not os.path.exists(prepared_file) and os.path.exists(raw_file):
             run_full_pipeline(raw_file, prepared_file)
 
@@ -214,145 +181,131 @@ def load_data():
 
 @st.cache_resource
 def get_trained_models(_df):
-    """Train all 4 models and return results dict (including y_test / y_pred)."""
+    """
+    Execute common data preparation and train all 4 models on identical train-test observations.
+    """
+    # 1. Drop missing target prices, filter outliers (99.5th percentile), stratified split (80/20, random_state=42)
+    X_train, X_test, y_train, y_test, transformer, outlier_info = prepare_data_and_split(_df)
+
+    # 2. Transform train and test using training-fitted transformer only (training medians applied here)
+    X_train_trans = transformer.transform(X_train)
+    X_test_trans = transformer.transform(X_test)
+
+    # 3. Calculate frozen quartile boundaries from TRAINING prices only [-inf, Q1, Q2, Q3, inf]
+    training_quartile_edges = get_training_quartile_edges(y_train)
+
     results = {}
 
-    # Linear Regression
-    lr_model, lr_scaler, lr_features, lr_mae, lr_rmse, lr_r2, lr_yt, lr_yp = train_lr(_df)
+    # ── Model 1: Linear Regression (Baseline) ──
+    lr_model, lr_scaler, lr_features, lr_mae, lr_rmse, lr_r2, lr_yt, lr_yp = train_lr(
+        X_train_trans=X_train_trans, X_test_trans=X_test_trans,
+        y_train=y_train, y_test=y_test, transformer=transformer
+    )
     results['Linear Regression'] = {
-        'model': lr_model, 'scaler': lr_scaler, 'features': lr_features,
+        'model': lr_model,
+        'transformer': transformer,
+        'scaler': lr_scaler,
+        'features': lr_features,
         'predict_fn': predict_lr,
         'metrics': {'MAE': lr_mae, 'RMSE': lr_rmse, 'R²': lr_r2},
-        'y_test': lr_yt, 'y_pred': lr_yp,
+        'y_test': lr_yt,
+        'y_pred': lr_yp,
+        'best_params': "Baseline model — no hyperparameter tuning",
     }
 
-    # KNN
-    knn_model, knn_scaler, knn_features, knn_mae, knn_rmse, knn_r2, knn_yt, knn_yp = train_knn(_df)
+    # ── Model 2: KNN Regressor (Pipeline with StandardScaler + KNN) ──
+    knn_model, knn_scaler, knn_features, knn_mae, knn_rmse, knn_r2, knn_yt, knn_yp = train_knn(
+        X_train_trans=X_train_trans, X_test_trans=X_test_trans,
+        y_train=y_train, y_test=y_test, transformer=transformer
+    )
     results['KNN Regressor'] = {
-        'model': knn_model, 'scaler': knn_scaler, 'features': knn_features,
+        'model': knn_model,
+        'transformer': transformer,
+        'scaler': knn_scaler,
+        'features': knn_features,
         'predict_fn': predict_knn,
         'metrics': {'MAE': knn_mae, 'RMSE': knn_rmse, 'R²': knn_r2},
-        'y_test': knn_yt, 'y_pred': knn_yp,
+        'y_test': knn_yt,
+        'y_pred': knn_yp,
+        'best_params': knn_model.best_params_,
     }
 
-    # Decision Tree
-    dt_model, dt_scaler, dt_features, dt_mae, dt_rmse, dt_r2, dt_yt, dt_yp = train_dt(_df)
+    # ── Model 3: Decision Tree ──
+    dt_model, dt_scaler, dt_features, dt_mae, dt_rmse, dt_r2, dt_yt, dt_yp = train_dt(
+        X_train_trans=X_train_trans, X_test_trans=X_test_trans,
+        y_train=y_train, y_test=y_test, transformer=transformer
+    )
     results['Decision Tree'] = {
-        'model': dt_model, 'scaler': dt_scaler, 'features': dt_features,
+        'model': dt_model,
+        'transformer': transformer,
+        'scaler': dt_scaler,
+        'features': dt_features,
         'predict_fn': predict_dt,
         'metrics': {'MAE': dt_mae, 'RMSE': dt_rmse, 'R²': dt_r2},
-        'y_test': dt_yt, 'y_pred': dt_yp,
+        'y_test': dt_yt,
+        'y_pred': dt_yp,
+        'best_params': dt_model.best_params_,
+        'training_r2': getattr(dt_model, 'training_r2_', None),
+        'r2_gap': getattr(dt_model, 'r2_gap_', None),
     }
 
-    # Random Forest
-    rf_model, rf_scaler, rf_features, rf_mae, rf_rmse, rf_r2, rf_yt, rf_yp = train_rf(_df)
+    # ── Model 4: Random Forest ──
+    rf_model, rf_scaler, rf_features, rf_mae, rf_rmse, rf_r2, rf_yt, rf_yp = train_rf(
+        X_train_trans=X_train_trans, X_test_trans=X_test_trans,
+        y_train=y_train, y_test=y_test, transformer=transformer
+    )
     results['Random Forest'] = {
-        'model': rf_model, 'scaler': rf_scaler, 'features': rf_features,
+        'model': rf_model,
+        'transformer': transformer,
+        'scaler': rf_scaler,
+        'features': rf_features,
         'predict_fn': predict_rf,
         'metrics': {'MAE': rf_mae, 'RMSE': rf_rmse, 'R²': rf_r2},
-        'y_test': rf_yt, 'y_pred': rf_yp,
+        'y_test': rf_yt,
+        'y_pred': rf_yp,
+        'best_params': rf_model.best_params_,
     }
 
-    return results
+    meta = {
+        'outlier_info': outlier_info,
+        'transformer': transformer,
+        'training_quartile_edges': training_quartile_edges,
+        'y_train': y_train,
+        'test_count': len(y_test),
+        'train_count': len(y_train),
+    }
+
+    return results, meta
 
 
 # ──────────────────────────────────────────────
 #  HELPER: quartile‑based classification metrics
 # ──────────────────────────────────────────────
-def price_quartile_metrics(y_test, y_pred, global_edges=None):
+def _make_labels(edges):
+    """Create human‑readable labels from bin edges [-inf, Q1, Q2, Q3, inf]."""
+    tag_names = ['Budget', 'Moderate', 'Premium', 'Luxury']
+    labels = []
+    for i in range(len(edges) - 1):
+        name = tag_names[i] if i < len(tag_names) else f"Q{i+1}"
+        lower_str = f"${edges[i]:,.0f}" if np.isfinite(edges[i]) else "Min"
+        upper_str = f"${edges[i+1]:,.0f}" if np.isfinite(edges[i+1]) else "Max"
+        labels.append(f"{name} ({lower_str}–{upper_str})")
+    return labels
+
+
+def price_quartile_metrics(y_test, y_pred, frozen_training_edges):
     """
-    Bin *actual* test prices into 4 equal‑frequency quartiles,
-    then assign predicted prices to the same bin edges.
-    Returns (bin_labels, y_test_binned, y_pred_binned, quartile_edges).
+    Bin actual and predicted test prices using FROZEN quartile boundaries from the TRAINING set.
     """
     y_test = np.array(y_test)
     y_pred = np.array(y_pred)
-
-    if global_edges is not None:
-        quartile_edges = global_edges
-    else:
-        # Create 4 equal‑frequency bins from actual prices
-        quartile_edges = np.quantile(y_test, [0, 0.25, 0.50, 0.75, 1.0])
-        quartile_edges = np.unique(quartile_edges)
-        if len(quartile_edges) < 3:
-            quartile_edges = np.linspace(y_test.min(), y_test.max(), 5)
-
+    quartile_edges = frozen_training_edges
     labels = _make_labels(quartile_edges)
 
     y_test_binned = pd.cut(y_test, bins=quartile_edges, labels=labels, include_lowest=True)
     y_pred_binned = pd.cut(y_pred, bins=quartile_edges, labels=labels, include_lowest=True)
 
-    # Handle predictions outside the range – assign to nearest bin
-    y_pred_binned = y_pred_binned.fillna(
-        pd.cut(np.clip(y_pred, quartile_edges[0], quartile_edges[-1]),
-               bins=quartile_edges, labels=labels, include_lowest=True)
-    )
-    # Still NaN → assign to closest label
-    y_pred_binned = y_pred_binned.fillna(labels[-1])
-
     return labels, y_test_binned, y_pred_binned, quartile_edges
-
-
-def _make_labels(edges):
-    """Create human‑readable labels from bin edges."""
-    tag_names = ['Budget', 'Moderate', 'Premium', 'Luxury']
-    labels = []
-    for i in range(len(edges) - 1):
-        name = tag_names[i] if i < len(tag_names) else f"Q{i+1}"
-        labels.append(f"{name} (${edges[i]:,.0f}–${edges[i+1]:,.0f})")
-    return labels
-
-
-def compute_quartile_roc_auc(y_test, y_pred, global_edges=None):
-    """
-    Compute One-vs-Rest ROC curves and ROC-AUC scores for price quartile classification.
-    Returns (roc_data_dict, weighted_auc_score).
-    """
-    y_test = np.array(y_test)
-    y_pred = np.array(y_pred)
-
-    if global_edges is not None:
-        quartile_edges = global_edges
-    else:
-        quartile_edges = np.quantile(y_test, [0, 0.25, 0.50, 0.75, 1.0])
-        quartile_edges = np.unique(quartile_edges)
-        if len(quartile_edges) < 3:
-            quartile_edges = np.linspace(y_test.min(), y_test.max(), 5)
-
-    labels = _make_labels(quartile_edges)
-    num_bins = len(labels)
-    centers = [(quartile_edges[i] + quartile_edges[i+1]) / 2.0 for i in range(num_bins)]
-
-    y_test_binned = pd.cut(y_test, bins=quartile_edges, labels=labels, include_lowest=True)
-
-    roc_data = {}
-    class_aucs = []
-    class_counts = []
-
-    for i, lbl in enumerate(labels):
-        y_true_binary = (y_test_binned == lbl).astype(int)
-        scores = -np.abs(y_pred - centers[i])
-        count = np.sum(y_true_binary)
-        class_counts.append(count)
-
-        if len(np.unique(y_true_binary)) > 1:
-            fpr, tpr, _ = roc_curve(y_true_binary, scores)
-            roc_val = auc(fpr, tpr)
-        else:
-            fpr, tpr = np.array([0, 1]), np.array([0, 1])
-            roc_val = 0.5
-
-        roc_data[lbl] = {
-            'fpr': fpr,
-            'tpr': tpr,
-            'auc': round(float(roc_val), 4)
-        }
-        class_aucs.append(roc_val)
-
-    total_samples = sum(class_counts)
-    weighted_auc = sum(a * c for a, c in zip(class_aucs, class_counts)) / total_samples if total_samples > 0 else 0.5
-
-    return roc_data, round(float(weighted_auc), 4)
 
 
 # ──────────────────────────────────────────────
@@ -362,10 +315,10 @@ df_raw = load_data()
 if df_raw.empty:
     st.stop()
 
-with st.spinner("Training models... This may take a moment."):
-    models_dict = get_trained_models(df_raw)
+with st.spinner("Training models using common train-test split... This may take a moment."):
+    models_dict, pipeline_meta = get_trained_models(df_raw)
 
-# Basic preprocessing for exploration
+# Basic preprocessing for exploration dashboard display
 df_explore = df_raw.copy()
 for col in ['bedrooms', 'bathrooms']:
     df_explore[col] = pd.to_numeric(df_explore[col], errors='coerce').fillna(0)
@@ -377,14 +330,11 @@ if 'amenities_count' not in df_explore.columns:
 if 'pets_allowed_bin' not in df_explore.columns:
     df_explore['pets_allowed_bin'] = 0
 
-# Derived column for chart #3
 df_explore['price_per_sqft'] = np.where(
     df_explore['square_feet'] > 0,
     df_explore['price'] / df_explore['square_feet'],
     np.nan
 )
-
-# Derived column for lat-lon difference chart
 df_explore['lat_lon_diff'] = df_explore['latitude'] - df_explore['longitude']
 
 # ──────────────────────────────────────────────
@@ -392,11 +342,9 @@ df_explore['lat_lon_diff'] = df_explore['latitude'] - df_explore['longitude']
 # ──────────────────────────────────────────────
 st.sidebar.header("Filters")
 
-# State filter
 all_states = sorted(df_explore['state'].dropna().unique().tolist())
 selected_states = st.sidebar.multiselect("Filter by State", all_states, default=all_states)
 
-# Bedrooms range
 bed_min = int(df_explore['bedrooms'].min())
 bed_max = int(df_explore['bedrooms'].max())
 bed_range = st.sidebar.slider(
@@ -404,7 +352,6 @@ bed_range = st.sidebar.slider(
     value=(bed_min, bed_max), step=1
 )
 
-# Bathrooms range
 bath_min = float(df_explore['bathrooms'].min())
 bath_max = float(df_explore['bathrooms'].max())
 bath_range = st.sidebar.slider(
@@ -412,11 +359,9 @@ bath_range = st.sidebar.slider(
     value=(bath_min, bath_max), step=0.5
 )
 
-# Pet Allowed filter
 pet_options = ["All", "Pet-Friendly Only", "No Pets Only"]
 selected_pet = st.sidebar.radio("Pet Policy", pet_options, index=0)
 
-# Amenities selection filter
 all_amenity_options = ["Gym", "Pool", "Parking", "Washer/Dryer", "AC", "Balcony", "Dishwasher", "Patio/Deck", "Storage"]
 selected_amenities = st.sidebar.multiselect(
     "Select Amenities",
@@ -425,7 +370,6 @@ selected_amenities = st.sidebar.multiselect(
     help="Select required amenities. Apartments with at least this many amenities will be included."
 )
 
-# Apply filters
 mask = (
     (df_explore['state'].isin(selected_states)) &
     (df_explore['bedrooms'] >= bed_range[0]) &
@@ -455,14 +399,10 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "Price Predictor",
 ])
 
-# Chart config – enable interactive hover and tooltips while hiding modebar
 chart_config = {'displayModeBar': False}
-static_config = chart_config
-
 
 # ═══════════════════════════════════════════════
 #  TAB 1 — VISUALISATION DASHBOARD (17 charts)
-#  Organised into 3 sub‑tabs
 # ═══════════════════════════════════════════════
 with tab1:
     st.header("Visualisation Dashboard")
@@ -473,7 +413,6 @@ with tab1:
         "Physical Layout & Floorplan",
     ])
 
-    # Helper function for Plotly Histogram + KDE curve
     def make_kde_histogram(df, col, title, x_label, y_label='Frequency', nbins=50, color='#87CEEB'):
         data = df[col].dropna()
         if len(data) == 0:
@@ -482,7 +421,6 @@ with tab1:
         fig = px.histogram(data, x=col, nbins=nbins,
                            labels={col: x_label, 'count': y_label},
                            color_discrete_sequence=[color])
-
         try:
             from scipy.stats import gaussian_kde
             kde_data = data.sample(5000, random_state=42) if len(data) > 5000 else data
@@ -505,13 +443,10 @@ with tab1:
         fig.update_layout(height=450, xaxis_title=x_label, yaxis_title=y_label, showlegend=False, hoverlabel=dict(font_size=13))
         return fig
 
-    # ═════════════════════════════════════════════
-    #  SUB‑TAB 1 — Location & Geographic Drivers
-    # ═════════════════════════════════════════════
+    # ── SUB‑TAB 1 — Location & Geographic Drivers ──
     with subtab_loc:
         st.subheader("Location & Geographic Drivers")
 
-        # Chart 1: Histogram with KDE — price_cleaned
         st.markdown("##### Distribution of Apartment Prices (Histogram with KDE)")
         df_price_hist = df_filtered.dropna(subset=['price']).copy()
         q99_price = df_price_hist['price'].quantile(0.99)
@@ -519,7 +454,6 @@ with tab1:
         fig1 = make_kde_histogram(df_price_hist, 'price', 'Distribution of Apartment Prices', 'Price ($)', 'Frequency')
         st.plotly_chart(fig1, use_container_width=True, config=chart_config, key="chart_1")
 
-        # Chart 2: Bar Chart — state vs. price_cleaned (Top 10)
         st.markdown("##### Bar Chart of Average Apartment Price by State (Top 10)")
         state_counts = df_filtered['state'].value_counts()
         top_10_states = state_counts.head(10).index.tolist()
@@ -532,7 +466,6 @@ with tab1:
         fig2.update_layout(height=450, xaxis_tickangle=-45, hoverlabel=dict(font_size=13))
         st.plotly_chart(fig2, use_container_width=True, config=chart_config, key="chart_2")
 
-        # Chart 3: Histogram with KDE — lat_lon_diff
         st.markdown("##### Distribution of Latitude-Longitude Difference (Histogram with KDE)")
         df_latlon = df_filtered.dropna(subset=['lat_lon_diff']).copy()
         fig3 = make_kde_histogram(df_latlon, 'lat_lon_diff', 'Distribution of Latitude-Longitude Difference',
@@ -540,8 +473,6 @@ with tab1:
         st.plotly_chart(fig3, use_container_width=True, config=chart_config, key="chart_3")
 
         col_loc_a, col_loc_b = st.columns(2)
-
-        # Chart 4: Line Chart (with Markers) — cityname vs. apartment_count
         with col_loc_a:
             st.markdown("##### Top 10 Cities by Number of Apartments (Line)")
             top_cities = df_filtered['cityname'].value_counts().head(10).reset_index()
@@ -553,7 +484,6 @@ with tab1:
             fig4.update_layout(height=420, xaxis_tickangle=-45, hoverlabel=dict(font_size=13))
             st.plotly_chart(fig4, use_container_width=True, config=chart_config, key="chart_4")
 
-        # Chart 10: Horizontal Bar Chart — state vs. square_feet
         with col_loc_b:
             st.markdown("##### Top 10 States by Median Apartment Size (Horizontal Bar)")
             agg10 = df_filtered.groupby('state', as_index=False)['square_feet'].median() \
@@ -565,13 +495,10 @@ with tab1:
             fig10.update_layout(height=420, yaxis={'categoryorder': 'total ascending'}, hoverlabel=dict(font_size=13))
             st.plotly_chart(fig10, use_container_width=True, config=chart_config, key="chart_10")
 
-    # ═════════════════════════════════════════════
-    #  SUB‑TAB 2 — Single Feature vs Price Drivers
-    # ═════════════════════════════════════════════
+    # ── SUB‑TAB 2 — Single Feature vs Price Drivers ──
     with subtab_feat:
         st.subheader("Single Feature vs Price Drivers")
 
-        # Chart 6: Multi-Bar Histogram (Grouped/Dodge) — pets_allowed × price
         st.markdown("##### Distribution of Rental Price by Pets Allowed Category (Grouped Histogram)")
         df_p6 = df_filtered.dropna(subset=['price']).copy()
         q99_p6 = df_p6['price'].quantile(0.99)
@@ -585,8 +512,6 @@ with tab1:
         st.plotly_chart(fig6, use_container_width=True, config=chart_config, key="chart_6")
 
         col_f1, col_f2 = st.columns(2)
-
-        # Chart 7: Violin Plot — bedrooms vs. price
         with col_f1:
             st.markdown("##### Bedrooms vs Price (Violin Plot)")
             df_v7 = df_filtered[df_filtered['bedrooms'] > 0].copy()
@@ -597,7 +522,6 @@ with tab1:
             fig7.update_layout(height=420, hoverlabel=dict(font_size=13))
             st.plotly_chart(fig7, use_container_width=True, config=chart_config, key="chart_7")
 
-        # Chart 8: Box Plot — bathrooms vs. price
         with col_f2:
             st.markdown("##### Bathrooms vs Price Distribution (Box Plot)")
             fig8 = px.box(df_filtered, x='bathrooms', y='price',
@@ -607,8 +531,6 @@ with tab1:
             st.plotly_chart(fig8, use_container_width=True, config=chart_config, key="chart_8")
 
         col_f3, col_f4 = st.columns(2)
-
-        # Chart 9: Area Graph — square_feet (binned) vs. price
         with col_f3:
             st.markdown("##### Size Tiers vs Average Rent (Area Graph)")
             df_bin9 = df_filtered.dropna(subset=['square_feet']).copy()
@@ -623,7 +545,6 @@ with tab1:
             fig9.update_layout(height=420, hoverlabel=dict(font_size=13))
             st.plotly_chart(fig9, use_container_width=True, config=chart_config, key="chart_9")
 
-        # Chart 11: Donut Chart — pets_allowed_bin
         with col_f4:
             st.markdown("##### Pet Policy Market Split (Donut Chart)")
             df_pets11 = df_filtered.copy()
@@ -639,7 +560,6 @@ with tab1:
             fig11.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True, hoverlabel=dict(font_size=14))
             st.plotly_chart(fig11, use_container_width=True, config=chart_config, key="chart_11")
 
-        # Chart 12: Line Graph (with Markers) — amenities_count vs. price
         st.markdown("##### Amenities Count vs Average Rent (Line Graph)")
         agg12 = df_filtered.groupby('amenities_count', as_index=False)['price'].mean().sort_values('amenities_count')
         fig12 = px.line(agg12, x='amenities_count', y='price', markers=True,
@@ -649,15 +569,11 @@ with tab1:
         fig12.update_layout(height=420, hoverlabel=dict(font_size=13))
         st.plotly_chart(fig12, use_container_width=True, config=chart_config, key="chart_12")
 
-    # ═════════════════════════════════════════════
-    #  SUB‑TAB 3 — Physical Layout & Floorplan
-    # ═════════════════════════════════════════════
+    # ── SUB‑TAB 3 — Physical Layout & Floorplan ──
     with subtab_layout:
         st.subheader("Physical Layout & Floorplan Mechanics")
 
         col_l1, col_l2 = st.columns(2)
-
-        # Chart 5: Pie Chart — bedrooms
         with col_l1:
             st.markdown("##### Bedrooms Distribution (Pie Chart)")
             bed_counts5 = df_filtered['bedrooms'].value_counts().sort_index().reset_index()
@@ -672,7 +588,6 @@ with tab1:
             fig5_pie.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True, hoverlabel=dict(font_size=14))
             st.plotly_chart(fig5_pie, use_container_width=True, config=chart_config, key="chart_5")
 
-        # Chart 13: Line Graph (with Markers) — cityname vs. apartment_count
         with col_l2:
             st.markdown("##### Top 10 Cities by Number of Apartments (Line Graph)")
             top_cities13 = df_filtered['cityname'].value_counts().head(10).reset_index()
@@ -683,10 +598,8 @@ with tab1:
             fig13.update_traces(hovertemplate='<b>City: %{x}</b><br>Apartments: %{y:,}<extra></extra>')
             fig13.update_layout(height=450, xaxis_tickangle=-45, hoverlabel=dict(font_size=13))
             st.plotly_chart(fig13, use_container_width=True, config=chart_config, key="chart_13")
-    
-        col_l3, col_l4 = st.columns(2)
 
-        # Chart 16: Pie Chart — bedrooms (Market Share Split)
+        col_l3, col_l4 = st.columns(2)
         with col_l3:
             st.markdown("##### Bedroom Count Market Share (Pie Chart)")
             df_bed16 = df_filtered.copy()
@@ -704,7 +617,6 @@ with tab1:
             fig16.update_layout(height=450, margin=dict(t=30, b=30, l=30, r=30), showlegend=True, hoverlabel=dict(font_size=14))
             st.plotly_chart(fig16, use_container_width=True, config=chart_config, key="chart_16")
 
-        # Chart 17: Radar Chart / Spider Chart — bedrooms × Multi-Attributes
         with col_l4:
             st.markdown("##### Multi-Attribute Profile by Bedrooms (Radar Chart)")
             bed_vals = sorted(df_filtered['bedrooms'].dropna().unique())
@@ -753,21 +665,49 @@ with tab2:
 
     # ── 2a. Regression Metrics Summary Table ──────────────────
     st.subheader("Regression Metrics Summary")
+
     metrics_rows = []
     for name, info in models_dict.items():
         m = info['metrics']
+        best_p = info.get('best_params', 'N/A')
+        if isinstance(best_p, dict):
+            formatted_params = ", ".join(f"{k}={v}" for k, v in best_p.items())
+        else:
+            formatted_params = str(best_p)
+
         metrics_rows.append({
             'Model': name,
             'R² Score': round(m['R²'], 4),
             'MAE ($)': round(m['MAE'], 2),
             'RMSE ($)': round(m['RMSE'], 2),
+            'Best Hyperparameters': formatted_params,
         })
     df_metrics = pd.DataFrame(metrics_rows)
     st.dataframe(df_metrics, use_container_width=True, hide_index=True)
 
+    # Automatically identify best model
+    best_row = df_metrics.sort_values(by=['R² Score', 'MAE ($)', 'RMSE ($)'], ascending=[False, True, True]).iloc[0]
+    best_model_name = best_row['Model']
+    best_r2 = float(best_row['R² Score'])
+    best_mae = float(best_row['MAE ($)'])
+    best_rmse = float(best_row['RMSE ($)'])
+
+    st.success(
+        f"**Best Performing Model**: **{best_model_name}** achieved the highest R² of {best_r2:.4f}, "
+        f"with an MAE of ${best_mae:,.2f} and RMSE of ${best_rmse:,.2f}, providing the strongest overall regression performance."
+    )
+
+    # Decision Tree Generalization Audit
+    dt_info = models_dict.get('Decision Tree', {})
+    if 'training_r2' in dt_info and dt_info['training_r2'] is not None:
+        c_dt1, c_dt2, c_dt3 = st.columns(3)
+        c_dt1.metric("Decision Tree Training R²", f"{dt_info['training_r2']:.4f}")
+        c_dt2.metric("Decision Tree Testing R²", f"{dt_info['metrics']['R²']:.4f}")
+        c_dt3.metric("Decision Tree Generalization Gap (R²)", f"{dt_info.get('r2_gap', 0.0):.4f}")
+
     # ── 2b. Multi‑Metric Score Comparison Bar Chart ──────────
     st.subheader("Multi‑Metric Score Comparison Bar Chart")
-    df_melt = df_metrics.melt(id_vars='Model', var_name='Metric', value_name='Value')
+    df_melt = df_metrics[['Model', 'R² Score', 'MAE ($)', 'RMSE ($)']].melt(id_vars='Model', var_name='Metric', value_name='Value')
     fig_multi = px.bar(df_melt, x='Model', y='Value', color='Metric', barmode='group',
                        text_auto='.2f',
                        color_discrete_sequence=['#636EFA', '#EF553B', '#00CC96'])
@@ -777,38 +717,30 @@ with tab2:
     st.divider()
 
     # ── 2c. Classification Metrics (Price Quartiles) ─────────
-    st.subheader("Classification Metrics on Price Quartiles")
-    st.caption("Prices are divided into 4 equal groups, with 25% of the data in each group."
-               "Predicted prices use the same price ranges so they can be fairly compared with the actual prices.")
+    st.subheader("Secondary Business Analysis: Price Quartile Classification")
+    st.caption("Quartile boundaries were established STRICTLY from training set prices and frozen. "
+               "Actual test prices and model predictions are classified into the 4 tiers using the same frozen cutoffs.")
 
-    # Calculate global uniform quartile edges from overall dataset
-    global_q_edges = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
-    global_q_edges = np.unique(global_q_edges)
-    if len(global_q_edges) < 3:
-        global_q_edges = np.linspace(df_explore['price'].min(), df_explore['price'].max(), 5)
+    frozen_edges = pipeline_meta['training_quartile_edges']
 
-    # Overall classification table for all models
     cls_rows = []
     for name, info in models_dict.items():
-        labels, yt_bin, yp_bin, _ = price_quartile_metrics(info['y_test'], info['y_pred'], global_edges=global_q_edges)
-        _, w_auc = compute_quartile_roc_auc(info['y_test'], info['y_pred'], global_edges=global_q_edges)
+        labels, yt_bin, yp_bin, _ = price_quartile_metrics(info['y_test'], info['y_pred'], frozen_training_edges=frozen_edges)
         cls_rows.append({
             'Model': name,
             'Accuracy': round(accuracy_score(yt_bin, yp_bin), 4),
             'Precision (Weighted)': round(precision_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
             'Recall (Weighted)': round(recall_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
             'F1 Score (Weighted)': round(f1_score(yt_bin, yp_bin, average='weighted', zero_division=0), 4),
-            'ROC-AUC (Weighted)': round(w_auc, 4),
         })
     df_cls = pd.DataFrame(cls_rows)
     st.dataframe(df_cls, use_container_width=True, hide_index=True)
 
-    # Grouped Bar Chart comparing Classification Metrics across models
-    st.markdown("#### Model Classification Performance Comparison")
-    df_cls_melt = df_cls.melt(id_vars=['Model'], value_vars=['Accuracy', 'F1 Score (Weighted)', 'ROC-AUC (Weighted)'],
+    st.markdown("#### Model Classification Performance Comparison (Accuracy & F1-Score)")
+    df_cls_melt = df_cls.melt(id_vars=['Model'], value_vars=['Accuracy', 'F1 Score (Weighted)'],
                               var_name='Metric', value_name='Score')
     fig_cls_bar = px.bar(df_cls_melt, x='Model', y='Score', color='Metric', barmode='group',
-                         text_auto='.4f', color_discrete_sequence=['#636EFA', '#00CC96', '#AB63FA'])
+                         text_auto='.4f', color_discrete_sequence=['#636EFA', '#00CC96'])
     fig_cls_bar.update_layout(height=420, yaxis_range=[0, 1.05], yaxis_title="Score", hoverlabel=dict(font_size=13))
     st.plotly_chart(fig_cls_bar, use_container_width=True, config=chart_config, key="chart_tab2_cls_bar")
 
@@ -819,43 +751,27 @@ with tab2:
     model_choice = st.selectbox("Select a model to inspect", list(models_dict.keys()))
 
     info = models_dict[model_choice]
-    labels, yt_bin, yp_bin, q_edges = price_quartile_metrics(info['y_test'], info['y_pred'], global_edges=global_q_edges)
-    roc_data, model_w_auc = compute_quartile_roc_auc(info['y_test'], info['y_pred'], global_edges=global_q_edges)
+    labels, yt_bin, yp_bin, q_edges = price_quartile_metrics(info['y_test'], info['y_pred'], frozen_training_edges=frozen_edges)
 
     # Actual vs Predicted Scatter
     st.markdown("#### Actual vs Predicted Price Scatter Plot")
-    
     df_scatter = pd.DataFrame({
         'Actual': info['y_test'],
         'Predicted': info['y_pred']
     })
-    
     if len(df_scatter) > 5000:
         df_scatter = df_scatter.sample(5000, random_state=42)
-    
+
     fig_ap = px.scatter(
         df_scatter,
         x='Actual',
         y='Predicted',
         opacity=0.35,
-        labels={
-            'Actual': 'Actual Price ($)',
-            'Predicted': 'Predicted Price ($)'
-        },
+        labels={'Actual': 'Actual Price ($)', 'Predicted': 'Predicted Price ($)'},
         color_discrete_sequence=['#AB63FA']
     )
-    
-    # Perfect prediction line
-    line_min = min(
-        df_scatter['Actual'].min(),
-        df_scatter['Predicted'].min()
-    )
-    
-    line_max = max(
-        df_scatter['Actual'].max(),
-        df_scatter['Predicted'].max()
-    )
-    
+    line_min = min(df_scatter['Actual'].min(), df_scatter['Predicted'].min())
+    line_max = max(df_scatter['Actual'].max(), df_scatter['Predicted'].max())
     fig_ap.add_trace(
         go.Scatter(
             x=[line_min, line_max],
@@ -865,70 +781,39 @@ with tab2:
             line=dict(color='red', dash='dash')
         )
     )
-    
-    fig_ap.update_layout(
-        height=500,
-        hoverlabel=dict(font_size=13)
-    )
-    
-    # Display Actual vs Predicted chart FIRST
-    st.plotly_chart(
-        fig_ap,
-        use_container_width=True,
-        config=chart_config,
-        key="chart_tab2_scatter"
-    )
-    
-    
+    fig_ap.update_layout(height=500, hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_ap, use_container_width=True, config=chart_config, key="chart_tab2_scatter")
+
     # Residual Plot
     st.markdown("#### Residual Plot")
-    
     df_residual = pd.DataFrame({
         'Predicted': info['y_pred'],
         'Residual': np.array(info['y_test']) - np.array(info['y_pred'])
     })
-    
     if len(df_residual) > 5000:
         df_residual = df_residual.sample(5000, random_state=42)
-    
+
     fig_res = px.scatter(
         df_residual,
         x='Predicted',
         y='Residual',
         opacity=0.35,
-        labels={
-            'Predicted': 'Predicted Price ($)',
-            'Residual': 'Residual ($)'
-        },
+        labels={'Predicted': 'Predicted Price ($)', 'Residual': 'Residual ($)'},
         color_discrete_sequence=['#AB63FA']
     )
-    
-    # Zero residual line
-    line_min = df_residual['Predicted'].min()
-    line_max = df_residual['Predicted'].max()
-    
+    line_min_res = df_residual['Predicted'].min()
+    line_max_res = df_residual['Predicted'].max()
     fig_res.add_trace(
         go.Scatter(
-            x=[line_min, line_max],
+            x=[line_min_res, line_max_res],
             y=[0, 0],
             mode='lines',
             name='Zero Residual',
             line=dict(color='red', dash='dash')
         )
     )
-    
-    fig_res.update_layout(
-        height=500,
-        hoverlabel=dict(font_size=13)
-    )
-    
-    # Display Residual chart AFTER its heading
-    st.plotly_chart(
-        fig_res,
-        use_container_width=True,
-        config=chart_config,
-        key="chart_tab2_residual"
-    )
+    fig_res.update_layout(height=500, hoverlabel=dict(font_size=13))
+    st.plotly_chart(fig_res, use_container_width=True, config=chart_config, key="chart_tab2_residual")
 
     # Class‑level metrics table
     st.markdown("#### Class‑Level Metrics (per Price Quartile)")
@@ -937,28 +822,25 @@ with tab2:
     for lbl in labels:
         if lbl in report:
             r = report[lbl]
-            class_auc_val = roc_data.get(lbl, {}).get('auc', 0.5)
             class_rows.append({
                 'Price Range': lbl,
                 'Accuracy': round(accuracy_score(yt_bin == lbl, yp_bin == lbl), 4),
                 'Precision': round(r['precision'], 4),
                 'Recall': round(r['recall'], 4),
                 'F1 Score': round(r['f1-score'], 4),
-                'ROC-AUC': round(class_auc_val, 4),
             })
     df_class = pd.DataFrame(class_rows)
     st.dataframe(df_class, use_container_width=True, hide_index=True)
 
     # Class-Level Performance Bar Chart
-    df_class_melt = df_class.melt(id_vars=['Price Range'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1 Score', 'ROC-AUC'],
+    df_class_melt = df_class.melt(id_vars=['Price Range'], value_vars=['Accuracy', 'Precision', 'Recall', 'F1 Score'],
                                   var_name='Metric', value_name='Score')
     fig_class_bar = px.bar(df_class_melt, x='Price Range', y='Score', color='Metric', barmode='group',
-                           text_auto='.4f', color_discrete_sequence=['#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#00CC96'],
+                           text_auto='.4f', color_discrete_sequence=['#AB63FA', '#FFA15A', '#19D3F3', '#00CC96'],
                            title=f"Quartile Performance Breakdown — {model_choice}")
     fig_class_bar.update_layout(height=420, yaxis_range=[0, 1.05], yaxis_title="Score", hoverlabel=dict(font_size=13))
     st.plotly_chart(fig_class_bar, use_container_width=True, config=chart_config, key="chart_tab2_class_bar")
 
-    
     # Confusion Matrix
     st.markdown("#### Confusion Matrix")
     cm = confusion_matrix(yt_bin, yp_bin, labels=labels)
@@ -981,7 +863,6 @@ with tab3:
         "Data Transformed",
     ])
 
-    # ── Sub-tab 1: Raw Dataset ────────────────────────
     with subtab_raw:
         st.subheader("Raw Dataset")
         if os.path.exists("apartments_for_rent_classified_100K.csv"):
@@ -991,13 +872,12 @@ with tab3:
                                    sep=';', encoding='latin-1', low_memory=False)
             df_raw_preview = load_raw_dataset()
 
-            c_r1, c_r2, c_r3 = st.columns(3)
+            c_r1, c_r2 = st.columns(2)
             c_r1.metric("Total Rows", f"{len(df_raw_preview):,}")
             c_r2.metric("Total Columns", df_raw_preview.shape[1])
 
             st.divider()
 
-            # Missing value analysis
             st.markdown("##### Missing Value Analysis")
             total_rows_raw = len(df_raw_preview)
             missing_count = df_raw_preview.isnull().sum()
@@ -1016,19 +896,16 @@ with tab3:
                 st.success("No missing values found in the raw dataset.")
 
             st.divider()
-
-            # Data preview
             st.markdown("##### Dataset Preview")
             raw_n = st.slider("Number of rows to display", min_value=5, max_value=100,
                               value=10, step=5, key="raw_preview_n")
             st.dataframe(df_raw_preview.head(raw_n), use_container_width=True, hide_index=True)
         else:
-            st.info("Raw file `apartments_for_rent_classified_100K.csv` not found in workspace directory.")
+            st.info("Raw file `apartments_for_rent_classified_100K.csv` not found.")
 
-    # ── Sub-tab 2: Cleaned Dataset ────────────────────
     with subtab_cleaned:
         st.subheader("Cleaned Dataset")
-        st.caption("This view shows the dataset after duplicate removal, whitespace stripping, and missing value imputation.")
+        st.caption("This view shows the dataset after duplicate removal, whitespace stripping, and text cleaning.")
 
         if os.path.exists("apartments_for_rent_classified_100K.csv"):
             @st.cache_data
@@ -1043,8 +920,6 @@ with tab3:
             c_c2.metric("Total Columns", df_cleaned_preview.shape[1])
 
             st.divider()
-
-            # Show columns and dtypes
             st.markdown("##### Column Overview")
             col_info = pd.DataFrame({
                 'Column': df_cleaned_preview.columns,
@@ -1055,32 +930,22 @@ with tab3:
             st.dataframe(col_info, use_container_width=True, hide_index=True)
 
             st.divider()
-
-            # Data preview
             st.markdown("##### Dataset Preview")
             clean_n = st.slider("Number of rows to display", min_value=5, max_value=100,
                                 value=10, step=5, key="clean_preview_n")
             st.dataframe(df_cleaned_preview.head(clean_n), use_container_width=True, hide_index=True)
         else:
-            st.info("Raw file `apartments_for_rent_classified_100K.csv` not found. "
-                    "Cannot generate the cleaned dataset preview.")
+            st.info("Raw file `apartments_for_rent_classified_100K.csv` not found.")
 
-    # ── Sub-tab 3: Data Transformed ───────────────────
     with subtab_transformed:
         st.subheader("Data Transformed")
-        st.caption("This is the final dataset which added `amenities_count` (number of amenities per listing) and `pets_allowed_bin` (1 = pets allowed, 0 = no pets).")
+        st.caption("Prepared dataset containing structural features, location attributes, and engineered feature columns.")
 
-        c_t1, c_t2, c_t3 = st.columns(3)
+        c_t1, c_t2 = st.columns(2)
         c_t1.metric("Total Rows", f"{len(df_explore):,}")
         c_t2.metric("Total Columns", df_explore.shape[1])
 
-        # Price quartile labels for display
-        q_edges_full = np.quantile(df_explore['price'].dropna(), [0, 0.25, 0.50, 0.75, 1.0])
-        q_labels_full = _make_labels(np.unique(q_edges_full))
-
         st.divider()
-
-        # Engineered features summary
         st.markdown("Columns Added After Data Transformation")
         col_eng1, col_eng2 = st.columns(2)
         with col_eng1:
@@ -1096,23 +961,11 @@ with tab3:
             st.dataframe(pet_counts[['Label', 'Count', 'Percentage']], use_container_width=True, hide_index=True)
 
         st.divider()
-
-        # Price quartile breakdown
-        st.markdown("##### Price Quartile Breakdown")
-        df_q = df_explore.copy()
-        df_q['Price Class'] = pd.cut(df_q['price'], bins=np.unique(q_edges_full),
-                                      labels=q_labels_full, include_lowest=True)
-        class_counts = df_q['Price Class'].value_counts().reset_index()
-        class_counts.columns = ['Price Class', 'Count']
-        st.dataframe(class_counts, use_container_width=True, hide_index=True)
-
-        st.divider()
-
-        # Data preview
         st.markdown("##### Dataset Preview")
         trans_n = st.slider("Number of rows to display", min_value=5, max_value=100,
                             value=20, step=5, key="trans_preview_n")
         st.dataframe(df_explore.head(trans_n), use_container_width=True, hide_index=True)
+
 
 # ═══════════════════════════════════════════════
 #  TAB 4 — PRICE PREDICTOR
@@ -1122,7 +975,6 @@ def render_price_predictor():
     st.header("Price Predictor")
     st.markdown("Enter apartment features and select a model to predict the estimated monthly rent.")
 
-    # Input form
     col_p1, col_p2 = st.columns(2)
 
     with col_p1:
@@ -1138,15 +990,12 @@ def render_price_predictor():
 
     st.divider()
 
-    # Model selector
-    pred_model_name = st.selectbox("Choose Prediction Model",
-                                    list(models_dict.keys()), key='pred_model')
+    pred_model_name = st.selectbox("Choose Prediction Model", list(models_dict.keys()), key='pred_model')
 
     if st.button("Predict Rent", type="primary", use_container_width=True):
-        state_df = df_explore[df_explore['state'] == pred_state]
-        state_lat = float(state_df['latitude'].median()) if len(state_df) > 0 and 'latitude' in state_df.columns else 37.0
-        state_lon = float(state_df['longitude'].median()) if len(state_df) > 0 and 'longitude' in state_df.columns else -95.0
-        state_mean_price = float(state_df['price'].mean()) if len(state_df) > 0 and 'price' in state_df.columns else 1500.0
+        transformer = pipeline_meta['transformer']
+        state_lat = transformer.state_lat_medians_.get(pred_state, transformer.medians_.get("latitude", 37.0))
+        state_lon = transformer.state_lon_medians_.get(pred_state, transformer.medians_.get("longitude", -95.0))
 
         input_data = {
             'bedrooms': pred_beds,
@@ -1155,16 +1004,21 @@ def render_price_predictor():
             'amenities_count': len(pred_amenities),
             'square_feet': pred_sqft,
             'state': pred_state,
+            'cityname': 'Unknown',
             'latitude': state_lat,
             'longitude': state_lon,
-            'city_mean_price': state_mean_price,
         }
 
-        # Selected model prediction
         sel_info = models_dict[pred_model_name]
-        sel_pred = sel_info['predict_fn'](sel_info['model'], sel_info['scaler'], sel_info['features'], input_data)
+        sel_pred = sel_info['predict_fn'](
+            sel_info['model'],
+            sel_info['transformer'],
+            sel_info['scaler'],
+            input_data
+        )
 
         st.success(f"### Estimated Monthly Rent ({pred_model_name}): **${sel_pred:,.2f}**")
+
 
 with tab4:
     render_price_predictor()
