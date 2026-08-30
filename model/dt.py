@@ -148,3 +148,45 @@ def predict_property(
 
     predicted_rent = float(model.predict(X_in_trans)[0])
     return max(0.0, predicted_rent)
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import os
+
+    print("=" * 60)
+    print("RUNNING DECISION TREE MODEL TRAINING & HYPERPARAMETER SEARCH")
+    print("=" * 60)
+
+    # Locate dataset file
+    possible_paths = [
+        Path("apartments_for_rent_fully_prepared.csv"),
+        Path("../apartments_for_rent_fully_prepared.csv"),
+        Path(__file__).resolve().parent.parent / "apartments_for_rent_fully_prepared.csv",
+    ]
+    data_path = None
+    for p in possible_paths:
+        if p.exists():
+            data_path = p
+            break
+
+    if data_path is None:
+        raise FileNotFoundError("Could not find 'apartments_for_rent_fully_prepared.csv'. Please ensure it exists in the project root.")
+
+    print(f"Loading data from: {data_path.name}")
+    df = pd.read_csv(data_path)
+    if "price" in df.columns:
+        df["price"] = pd.to_numeric(df["price"], errors="coerce")
+
+    best_model, _, feature_names, mae, rmse, r2, y_test, y_pred = train_model(df=df)
+
+    print("\n" + "=" * 60)
+    print("DECISION TREE HYPERPARAMETER SELECTION RESULTS")
+    print("=" * 60)
+    for res in best_model.selection_results_:
+        print(f"• Candidate: {res['name']:<45} | Val R²: {res['r2']:.4f} | Val MAE: ${res['mae']:,.2f}")
+    print("-" * 60)
+    print("Best Hyperparameters selected:")
+    for param, val in best_model.best_params_.items():
+        print(f"  - {param}: {val}")
+    print("=" * 60)
