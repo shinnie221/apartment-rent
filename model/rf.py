@@ -8,7 +8,13 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import RandomizedSearchCV
 
-from .pipeline import FeatureTransformer, prepare_data_and_split
+try:
+    from .pipeline import FeatureTransformer, prepare_data_and_split
+except (ImportError, ValueError):
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from model.pipeline import FeatureTransformer, prepare_data_and_split
 
 
 def train_model(
@@ -114,3 +120,41 @@ def predict_property(
     predicted_rent = np.expm1(predicted_rent_log)
 
     return max(0.0, float(predicted_rent))
+
+
+if __name__ == "__main__":
+    from pathlib import Path
+    import os
+
+    print("=" * 60)
+    print("RUNNING RANDOM FOREST MODEL TRAINING & HYPERPARAMETER SEARCH")
+    print("=" * 60)
+
+    possible_paths = [
+        Path("apartments_for_rent_fully_prepared.csv"),
+        Path("../apartments_for_rent_fully_prepared.csv"),
+        Path(__file__).resolve().parent.parent / "apartments_for_rent_fully_prepared.csv",
+    ]
+    data_path = None
+    for p in possible_paths:
+        if p.exists():
+            data_path = p
+            break
+
+    if data_path is None:
+        raise FileNotFoundError("Could not find 'apartments_for_rent_fully_prepared.csv'. Please ensure it exists in the project root.")
+
+    print(f"Loading data from: {data_path.name}")
+    df = pd.read_csv(data_path)
+    if "price" in df.columns:
+        df["price"] = pd.to_numeric(df["price"], errors="coerce")
+
+    best_model, _, feature_names, mae, rmse, r2, y_test, y_pred = train_model(df=df)
+
+    print("\n" + "=" * 60)
+    print("RANDOM FOREST HYPERPARAMETER OPTIMIZATION SUMMARY")
+    print("=" * 60)
+    print("Best Hyperparameters found by RandomizedSearchCV:")
+    for param, val in best_model.best_params_.items():
+        print(f"  - {param}: {val}")
+    print("=" * 60)

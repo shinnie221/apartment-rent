@@ -718,10 +718,18 @@ with tab2:
 
     # ── 2c. Classification Metrics (Price Quartiles) ─────────
     st.subheader("Secondary Business Analysis: Price Quartile Classification")
-    st.caption("Quartile boundaries were established STRICTLY from training set prices and frozen. "
-               "Actual test prices and model predictions are classified into the 4 tiers using the same frozen cutoffs.")
 
     frozen_edges = pipeline_meta['training_quartile_edges']
+    q1_val, q2_val, q3_val = frozen_edges[1], frozen_edges[2], frozen_edges[3]
+
+    st.markdown(f"""
+| Price Category | Definition | Interpretation | Cutoff (Training Data) |
+| :--- | :--- | :--- | :--- |
+| **Budget** | Price ≤ Q1 | Lowest rental-price range | ≤ ${q1_val:,.0f} |
+| **Moderate** | Q1 < Price ≤ Q2 | Lower-middle rental-price range | ${q1_val:,.0f} – ${q2_val:,.0f} |
+| **Premium** | Q2 < Price ≤ Q3 | Upper-middle rental-price range | ${q2_val:,.0f} – ${q3_val:,.0f} |
+| **Luxury** | Price > Q3 | Highest rental-price range | > ${q3_val:,.0f} |
+""")
 
     cls_rows = []
     for name, info in models_dict.items():
@@ -799,7 +807,7 @@ with tab2:
         y='Residual',
         opacity=0.35,
         labels={'Predicted': 'Predicted Price ($)', 'Residual': 'Residual ($)'},
-        color_discrete_sequence=['#AB63FA']
+        color_discrete_sequence=['#FF69B4']
     )
     line_min_res = df_residual['Predicted'].min()
     line_max_res = df_residual['Predicted'].max()
