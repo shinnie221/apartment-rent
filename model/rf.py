@@ -82,7 +82,7 @@ def train_model(
             "max_features": 0.5,
             "max_depth": None,
         }
-        model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+        model = RandomForestRegressor(**best_params, random_state=42, n_jobs=1)
         model.fit(X_train_trans, y_train_log)
         model.best_params_ = best_params
 
