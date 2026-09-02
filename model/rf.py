@@ -75,7 +75,13 @@ def train_model(
         model.best_params_ = best_params
         model.cv_results_summary_ = random_search.cv_results_
     else:
-        best_params = {"n_estimators": 50, "max_depth": 16, "min_samples_leaf": 3, "max_features": 0.5}
+        best_params = {
+            "n_estimators": 50,
+            "min_samples_leaf": 1,
+            "max_samples": 0.8,
+            "max_features": 0.5,
+            "max_depth": None,
+        }
         model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
         model.fit(X_train_trans, y_train_log)
         model.best_params_ = best_params

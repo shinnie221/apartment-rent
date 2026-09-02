@@ -76,10 +76,10 @@ def train_model(
         best_pipe.best_params_ = best_params
         best_pipe.cv_results_summary_ = grid_search.cv_results_
     else:
-        best_params = {"metric": "manhattan", "n_neighbors": 7, "weights": "distance"}
+        best_params = {"metric": "manhattan", "n_neighbors": 15, "weights": "distance"}
         best_pipe = Pipeline([
             ("scaler", StandardScaler()),
-            ("knn", KNeighborsRegressor(n_neighbors=7, weights="distance", metric="manhattan", n_jobs=-1)),
+            ("knn", KNeighborsRegressor(n_neighbors=15, weights="distance", metric="manhattan", n_jobs=-1)),
         ])
         best_pipe.fit(X_train_trans, y_train_log)
         best_pipe.best_params_ = best_params
