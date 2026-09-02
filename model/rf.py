@@ -24,10 +24,11 @@ def train_model(
     y_train: pd.Series | None = None,
     y_test: pd.Series | None = None,
     transformer: FeatureTransformer | None = None,
+    run_random_search: bool = False,
 ):
     """
-    Train Random Forest Regressor using RandomizedSearchCV on training data.
-    Fits the best estimator on the full training set and evaluates on the shared test set.
+    Train Random Forest Regressor on training data.
+    Uses best-performing hyperparameters by default for fast, memory-safe execution on Streamlit Cloud.
     """
     if X_train_trans is None or X_test_trans is None or y_train is None or y_test is None:
         if df is None:
@@ -39,50 +40,47 @@ def train_model(
     feature_cols = X_train_trans.columns.tolist()
     y_train_log = np.log1p(y_train)
 
-    # ── RandomizedSearchCV for Random Forest ──
-    # Subsample training data for fast CV iterations if training set is large
-    if len(X_train_trans) > 20000:
-        np.random.seed(42)
-        cv_idx = np.random.choice(len(X_train_trans), size=20000, replace=False)
-        X_cv = X_train_trans.iloc[cv_idx]
-        y_cv = y_train_log.iloc[cv_idx]
+    if run_random_search:
+        if len(X_train_trans) > 20000:
+            np.random.seed(42)
+            cv_idx = np.random.choice(len(X_train_trans), size=20000, replace=False)
+            X_cv = X_train_trans.iloc[cv_idx]
+            y_cv = y_train_log.iloc[cv_idx]
+        else:
+            X_cv = X_train_trans
+            y_cv = y_train_log
+
+        param_distributions = {
+            "n_estimators": [50, 100, 200],
+            "max_depth": [10, 15, 20, 25, None],
+            "min_samples_leaf": [1, 5, 10],
+            "max_features": ["sqrt", "log2", 0.5],
+            "max_samples": [0.6, 0.8, 1.0],
+        }
+
+        random_search = RandomizedSearchCV(
+            estimator=RandomForestRegressor(random_state=42, n_jobs=-1),
+            param_distributions=param_distributions,
+            n_iter=20,
+            cv=3,
+            scoring="neg_mean_squared_error",
+            random_state=42,
+            n_jobs=-1,
+            return_train_score=True,
+        )
+        random_search.fit(X_cv, y_cv)
+        best_params = random_search.best_params_
+        model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+        model.fit(X_train_trans, y_train_log)
+        model.best_params_ = best_params
+        model.cv_results_summary_ = random_search.cv_results_
     else:
-        X_cv = X_train_trans
-        y_cv = y_train_log
+        best_params = {"n_estimators": 50, "max_depth": 16, "min_samples_leaf": 3, "max_features": 0.5}
+        model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+        model.fit(X_train_trans, y_train_log)
+        model.best_params_ = best_params
 
-    param_distributions = {
-        "n_estimators": [50, 100, 200],
-        "max_depth": [10, 15, 20, 25, None],
-        "min_samples_leaf": [1, 5, 10],
-        "max_features": ["sqrt", "log2", 0.5],
-        "max_samples": [0.6, 0.8, 1.0],
-    }
-
-    random_search = RandomizedSearchCV(
-        estimator=RandomForestRegressor(random_state=42, n_jobs=-1),
-        param_distributions=param_distributions,
-        n_iter=20,
-        cv=3,
-        scoring="neg_mean_squared_error",
-        random_state=42,
-        n_jobs=-1,
-        return_train_score=True,
-    )
-    random_search.fit(X_cv, y_cv)
-
-    best_params = random_search.best_params_
     print(f"[Random Forest] Best Hyperparameters: {best_params}")
-
-    # Refit final Random Forest model on FULL training set
-    model = RandomForestRegressor(
-        **best_params,
-        random_state=42,
-        n_jobs=-1,
-    )
-    model.fit(X_train_trans, y_train_log)
-
-    model.best_params_ = best_params
-    model.cv_results_summary_ = random_search.cv_results_
 
     # Predict on the full common test set and reverse log transform
     y_pred_log = model.predict(X_test_trans)

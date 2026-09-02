@@ -26,11 +26,11 @@ def train_model(
     y_train: pd.Series | None = None,
     y_test: pd.Series | None = None,
     transformer: FeatureTransformer | None = None,
+    run_grid_search: bool = False,
 ):
     """
-    Train KNN Regressor using an sklearn Pipeline (StandardScaler + KNeighborsRegressor)
-    and GridSearchCV so scaling is fitted independently within each CV fold.
-    Refits best pipeline on full training data and evaluates on the FULL common test set.
+    Train KNN Regressor using an sklearn Pipeline (StandardScaler + KNeighborsRegressor).
+    Uses best-performing hyperparameters by default for fast, memory-safe execution on Streamlit Cloud.
     """
     if X_train_trans is None or X_test_trans is None or y_train is None or y_test is None:
         if df is None:
@@ -42,48 +42,49 @@ def train_model(
     feature_cols = X_train_trans.columns.tolist()
     y_train_log = np.log1p(y_train)
 
-    # ── Pipeline with StandardScaler & KNN ──
-    pipe = Pipeline([
-        ("scaler", StandardScaler()),
-        ("knn", KNeighborsRegressor(algorithm="auto")),
-    ])
+    if run_grid_search:
+        pipe = Pipeline([
+            ("scaler", StandardScaler()),
+            ("knn", KNeighborsRegressor(algorithm="auto")),
+        ])
+        param_grid = {
+            "knn__n_neighbors": [3, 5, 7, 9, 11, 15],
+            "knn__weights": ["uniform", "distance"],
+            "knn__metric": ["euclidean", "manhattan"],
+        }
+        if len(X_train_trans) > 15000:
+            np.random.seed(42)
+            cv_idx = np.random.choice(len(X_train_trans), size=15000, replace=False)
+            X_cv = X_train_trans.iloc[cv_idx]
+            y_cv = y_train_log.iloc[cv_idx]
+        else:
+            X_cv = X_train_trans
+            y_cv = y_train_log
 
-    param_grid = {
-        "knn__n_neighbors": [3, 5, 7, 9, 11, 15],
-        "knn__weights": ["uniform", "distance"],
-        "knn__metric": ["euclidean", "manhattan"],
-    }
-
-    # Subsample training data for fast CV search if training set is large
-    if len(X_train_trans) > 15000:
-        np.random.seed(42)
-        cv_idx = np.random.choice(len(X_train_trans), size=15000, replace=False)
-        X_cv = X_train_trans.iloc[cv_idx]
-        y_cv = y_train_log.iloc[cv_idx]
+        grid_search = GridSearchCV(
+            estimator=pipe,
+            param_grid=param_grid,
+            cv=3,
+            scoring="neg_mean_squared_error",
+            n_jobs=-1,
+            return_train_score=True,
+        )
+        grid_search.fit(X_cv, y_cv)
+        best_params = {k.replace("knn__", ""): v for k, v in grid_search.best_params_.items()}
+        best_pipe = grid_search.best_estimator_
+        best_pipe.fit(X_train_trans, y_train_log)
+        best_pipe.best_params_ = best_params
+        best_pipe.cv_results_summary_ = grid_search.cv_results_
     else:
-        X_cv = X_train_trans
-        y_cv = y_train_log
+        best_params = {"metric": "manhattan", "n_neighbors": 7, "weights": "distance"}
+        best_pipe = Pipeline([
+            ("scaler", StandardScaler()),
+            ("knn", KNeighborsRegressor(n_neighbors=7, weights="distance", metric="manhattan", n_jobs=-1)),
+        ])
+        best_pipe.fit(X_train_trans, y_train_log)
+        best_pipe.best_params_ = best_params
 
-    grid_search = GridSearchCV(
-        estimator=pipe,
-        param_grid=param_grid,
-        cv=3,
-        scoring="neg_mean_squared_error",
-        n_jobs=-1,
-        return_train_score=True,
-    )
-    grid_search.fit(X_cv, y_cv)
-
-    # Extract clean best params without 'knn__' prefix for reporting
-    best_params = {k.replace("knn__", ""): v for k, v in grid_search.best_params_.items()}
     print(f"[KNN Regressor] Best Hyperparameters: {best_params}")
-
-    # Refit final best pipeline on FULL training set
-    best_pipe = grid_search.best_estimator_
-    best_pipe.fit(X_train_trans, y_train_log)
-
-    best_pipe.best_params_ = best_params
-    best_pipe.cv_results_summary_ = grid_search.cv_results_
 
     # Predict on the FULL common test set
     y_pred_log = best_pipe.predict(X_test_trans)
