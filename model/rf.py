@@ -59,18 +59,18 @@ def train_model(
         }
 
         random_search = RandomizedSearchCV(
-            estimator=RandomForestRegressor(random_state=42, n_jobs=-1),
+            estimator=RandomForestRegressor(random_state=42, n_jobs=1),
             param_distributions=param_distributions,
             n_iter=20,
             cv=3,
             scoring="neg_mean_squared_error",
             random_state=42,
-            n_jobs=-1,
+            n_jobs=1,
             return_train_score=True,
         )
         random_search.fit(X_cv, y_cv)
         best_params = random_search.best_params_
-        model = RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)
+        model = RandomForestRegressor(**best_params, random_state=42, n_jobs=1)
         model.fit(X_train_trans, y_train_log)
         model.best_params_ = best_params
         model.cv_results_summary_ = random_search.cv_results_
